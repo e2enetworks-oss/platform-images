@@ -1,0 +1,27 @@
+name: Lint
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: hadolint all Dockerfiles
+        run: |
+          status=0
+          while IFS= read -r -d '' df; do
+            echo ">> hadolint $df"
+            docker run --rm -i ghcr.io/hadolint/hadolint:latest hadolint --failure-threshold error - < "$df" || status=1
+          done < <(find . -name Dockerfile -not -path './.git/*' -print0)
+          exit $status
+
+      - name: actionlint all workflows
+        run: docker run --rm -v "$PWD:/repo" --workdir /repo rhysd/actionlint:latest
