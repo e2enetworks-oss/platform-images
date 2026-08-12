@@ -10,7 +10,7 @@ Every image is multi-arch (`linux/amd64` + `linux/arm64`) and built only when it
 | `python/3.11` | `ghcr.io/e2enetworks-oss/python:3.11-*` | uv, pipenv, ansible, ruff, pyright, semgrep, pytest, Django stack |
 | `python/3.14` | `ghcr.io/e2enetworks-oss/python:3.14-*` | same as 3.11 + libxml2/libxslt/libxmlsec headers |
 | `rust` | `ghcr.io/e2enetworks-oss/rust:*` | cargo-chef, grcov, sccache, cargo-audit, protobuf |
-| `infra-ci` | `ghcr.io/e2enetworks-oss/infra-ci:*` | helm, vector, bash, curl, openssl (alpine) |
+| `helm-vector` | `ghcr.io/e2enetworks-oss/helm-vector:*` | helm, vector, bash, curl, openssl (alpine) |
 | `pnpm/24` | `ghcr.io/e2enetworks-oss/pnpm:24-*` | Node 24 + pnpm 10, eslint, prettier, vitest — **legacy, prefer `bun/1`** |
 | `bun/1` | `ghcr.io/e2enetworks-oss/bun:1-*` | Bun 1.x, git, ssh, curl |
 
@@ -23,7 +23,7 @@ Every merge to `main` that touches an image directory publishes two tags:
 | `<variant>-<sha7>` | `python:3.14-a1b2c3d` | Immutable — pin this in consumers |
 | `<variant>-latest` | `python:3.14-latest` | Moves on every merge |
 
-Images without a variant segment (`rust`, `infra-ci`) get bare tags:
+Images without a variant segment (`rust`, `helm-vector`) get bare tags:
 `rust:a1b2c3d`, `rust:latest`.
 
 **Consumers should pin the sha tag.** `-latest` is for convenience and local iteration.

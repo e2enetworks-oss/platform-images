@@ -1,5 +1,5 @@
 # =============================================================================
-# INFRA CI BASE IMAGE — helm + vector
+# HELM-VECTOR CI BASE IMAGE — helm + vector
 # =============================================================================
 # Pre-baked CI image for infra validation jobs.
 # Eliminates per-run installation of helm and vector.

@@ -20,7 +20,7 @@ concurrency:
 jobs:
   # ── 1. Detect which image directories changed ────────────────────────────
   # Filter keys encode the directory: segments joined with "_", dots as "_".
-  #   python/3.14 → python_3_14 · bun/1 → bun_1 · infra-ci → infra-ci
+  #   python/3.14 → python_3_14 · bun/1 → bun_1 · helm-vector → helm-vector
   # Keep in sync with IMAGES in make/build.mk.
   changes:
     runs-on: ubuntu-latest
@@ -35,7 +35,7 @@ jobs:
             python_3_11: python/3.11/**
             python_3_14: python/3.14/**
             rust: rust/**
-            infra-ci: infra-ci/**
+            helm-vector: helm-vector/**
             pnpm_24: pnpm/24/**
             bun_1: bun/1/**
 

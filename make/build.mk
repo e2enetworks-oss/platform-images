@@ -15,7 +15,7 @@ PLATFORMS  ?= linux/amd64,linux/arm64
 
 # Single source of truth for the image set. Keep in sync with the
 # path filters in .github/workflows/build.yml.
-IMAGES := python/3.11 python/3.14 rust infra-ci pnpm/24 bun/1
+IMAGES := python/3.11 python/3.14 rust helm-vector pnpm/24 bun/1
 
 # Tag resolution for $(IMAGE):
 #   _NAME    = first path segment          (python/3.14 → python)
@@ -70,7 +70,7 @@ test:  ## Smoke-test one image (runs it, checks key binaries)
 		python/3.11) cmd="python --version && uv --version && ruff --version && pytest --version" ;; \
 		python/3.14) cmd="python --version && uv --version && ruff --version && pytest --version" ;; \
 		rust)        cmd="rustc --version && cargo --version && cargo-audit --version" ;; \
-		infra-ci)    cmd="helm version && vector --version" ;; \
+		helm-vector) cmd="helm version && vector --version" ;; \
 		pnpm/24)     cmd="node --version && pnpm --version && eslint --version" ;; \
 		bun/1)       cmd="bun --version && git --version" ;; \
 	esac; \
