@@ -19,10 +19,10 @@
 #   protobuf-compiler                      — for gRPC/tonic builds
 #
 # Build with specific versions:
-#   docker buildx build --build-arg RUST_VERSION=1.94.0 ...
+#   docker buildx build --build-arg RUST_VERSION=1.97.1 ...
 # =============================================================================
 
-ARG RUST_VERSION=1.94.0
+ARG RUST_VERSION=1.97.1
 
 # ---------------------------------------------------------------------------
 # Tool fetch stage — keeps cargo-binstall and its metadata out of the final image

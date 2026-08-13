@@ -13,7 +13,7 @@ for arm64 — so no build runs under QEMU emulation.
 | `python/3.14` | `ghcr.io/e2enetworks-oss/python:3.14-*` | same as 3.11 + libxml2/libxslt/libxmlsec headers |
 | `rust` | `ghcr.io/e2enetworks-oss/rust:*` | cargo-chef, grcov, sccache, cargo-audit, protobuf |
 | `helm-vector` | `ghcr.io/e2enetworks-oss/helm-vector:*` | helm, vector, bash, curl, openssl (alpine) |
-| `pnpm/24` | `ghcr.io/e2enetworks-oss/pnpm:24-*` | Node 24 + pnpm 10, eslint, prettier, vitest — **legacy, prefer `bun/1`** |
+| `pnpm/24` | `ghcr.io/e2enetworks-oss/pnpm:24-*` | Node 24 + pnpm 11, eslint, prettier, vitest |
 | `bun/1` | `ghcr.io/e2enetworks-oss/bun:1-*` | Bun 1.x, git, ssh, curl |
 
 ## Tag scheme
@@ -105,12 +105,6 @@ Base images must stay slim: official `-slim`/alpine bases, `--no-install-recomme
 / `apk --no-cache`, a single `RUN` per concern with layer cleanup, a non-root
 user, and a built-in `--version` verification step so a broken image fails the
 build instead of shipping.
-
-## Migrating from Harbor
-
-Older consumers may still reference `registry.e2enetworks.net/infra/*-ci` tags.
-Those are frozen. Point the consumer at the matching `ghcr.io/e2enetworks-oss/*`
-sha tag above, verify its CI, and delete the Harbor reference.
 
 ## Local reference
 
