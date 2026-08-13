@@ -1,9 +1,13 @@
 name: Build & Publish
 
 # Builds only the image directories that changed.
-# - Pull request:      build both architectures, publish nothing (proof before merge).
 # - Push to main:      build + push <variant>-<sha7> and move <variant>-latest.
-# - workflow_dispatch: rebuild + publish a chosen list of directories, or all.
+# - workflow_dispatch on main: rebuild + publish a chosen list, or all.
+# - Everything else (pull request, dispatch on any other branch): build both
+#   architectures and warm the cache, publish nothing. Publishing is gated on
+#   the ref rather than the event, because workflow_dispatch can name any ref
+#   and moving <variant>-latest from an unreviewed branch is not recoverable
+#   by reverting a commit.
 #
 # Two structural decisions carry the build time:
 #
@@ -55,6 +59,11 @@ jobs:
     outputs:
       # JSON array of {key, dir, name, variant}; [] when nothing changed.
       matrix: ${{ steps.matrix.outputs.matrix }}
+      # Publishing is gated on the ref, not just the event. workflow_dispatch
+      # can be launched against ANY branch, so an event-only gate would let a
+      # feature branch push tags and move <variant>-latest — the tag consumers
+      # treat as the current image. Everything off main builds without pushing.
+      publish: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
     steps:
       - uses: actions/checkout@v6
 
@@ -100,8 +109,9 @@ jobs:
             >> "$GITHUB_STEP_SUMMARY"
 
   # ── 2. Build each image once per architecture, on a native runner ────────
-  # On main / workflow_dispatch the layers are pushed by digest only — no tags.
-  # Pull requests build to cache, proving both architectures without publishing.
+  # When publishing, the layers are pushed by digest only — no tags; the merge
+  # job applies those. Otherwise the build still runs on both architectures and
+  # warms the cache, it just produces nothing.
   build:
     needs: changes
     if: needs.changes.outputs.matrix != '[]'
@@ -132,6 +142,7 @@ jobs:
       - name: Resolve build output and cache refs
         id: out
         env:
+          PUBLISH: ${{ needs.changes.outputs.publish }}
           EVENT: ${{ github.event_name }}
           HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
           NAME: ${{ matrix.image.name }}
@@ -144,10 +155,11 @@ jobs:
           prefix=${VARIANT:+${VARIANT}-}
           cache_ref="${repo}:buildcache-${prefix}${ARCH}"
 
-          if [ "$EVENT" = "pull_request" ]; then
-            echo "spec=type=cacheonly" >> "$GITHUB_OUTPUT"
-          else
+          if [ "$PUBLISH" = "true" ]; then
             echo "spec=type=image,name=${repo},push-by-digest=true,name-canonical=true,push=true" >> "$GITHUB_OUTPUT"
+          else
+            # Builds both architectures and warms the cache, publishes nothing.
+            echo "spec=type=cacheonly" >> "$GITHUB_OUTPUT"
           fi
 
           echo "cache_from=type=registry,ref=${cache_ref}" >> "$GITHUB_OUTPUT"
@@ -173,7 +185,7 @@ jobs:
           cache-to: ${{ steps.out.outputs.cache_to }}
 
       - name: Export digest
-        if: github.event_name != 'pull_request'
+        if: needs.changes.outputs.publish == 'true'
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
         run: |
@@ -182,7 +194,7 @@ jobs:
           touch "/tmp/digests/${DIGEST#sha256:}"
 
       - uses: actions/upload-artifact@v7
-        if: github.event_name != 'pull_request'
+        if: needs.changes.outputs.publish == 'true'
         with:
           name: digests-${{ matrix.image.key }}-${{ matrix.platform.arch }}
           path: /tmp/digests/*
@@ -194,7 +206,7 @@ jobs:
   # failed, so one broken Dockerfile cannot block the others from publishing.
   merge:
     needs: [changes, build]
-    if: ${{ !cancelled() && github.event_name != 'pull_request' && needs.changes.outputs.matrix != '[]' }}
+    if: ${{ !cancelled() && needs.changes.result == 'success' && needs.changes.outputs.publish == 'true' && needs.changes.outputs.matrix != '[]' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
