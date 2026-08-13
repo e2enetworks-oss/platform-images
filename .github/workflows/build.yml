@@ -62,20 +62,12 @@ jobs:
         id: gen
         run: |
           set -euo pipefail
-          # Filter keys must be plain identifiers, so "." and "/" become "_":
-          #   python/3.14 → python_3_14 · helm-vector → helm-vector
           dirs=$(make --no-print-directory list-dirs)
-          filters=$(echo "$dirs" | while read -r dir; do
-            printf "%s: '%s/**'\n" "$(echo "$dir" | tr './' '__')" "$dir"
-          done)
-          # key → directory, carried forward rather than re-derived: the key
-          # transform is deliberately lossy and cannot be reversed by hand.
-          map=$(echo "$dirs" | jq -Rsc '
-            split("\n") | map(select(length > 0))
-            | map({key: gsub("[./]"; "_"), value: .}) | from_entries')
           {
-            echo "filters<<EOF"; echo "$filters"; echo "EOF"
-            echo "map=$map"
+            echo "filters<<EOF"
+            printf '%s\n' "$dirs" | scripts/build-matrix.sh filters
+            echo "EOF"
+            echo "map=$(printf '%s\n' "$dirs" | scripts/build-matrix.sh map)"
           } >> "$GITHUB_OUTPUT"
 
       - uses: dorny/paths-filter@v3
@@ -94,32 +86,17 @@ jobs:
         run: |
           set -euo pipefail
           if [ "$EVENT" = "workflow_dispatch" ]; then
-            known=$(make --no-print-directory list-dirs)
-            if [ "$REQUESTED" = "all" ]; then
-              dirs="$known"
-            else
-              dirs=$(echo "$REQUESTED" | tr ',' '\n' | tr -d '[:blank:]' | grep -v '^$')
-              for dir in $dirs; do
-                echo "$known" | grep -qxF "$dir" || {
-                  echo "::error::unknown image directory '$dir'. Known: $(echo "$known" | tr '\n' ' ')"
-                  exit 1
-                }
-              done
-            fi
-            keys=$(echo "$dirs" | jq -Rsc 'split("\n") | map(select(length > 0) | gsub("[./]"; "_"))')
+            keys=$(make --no-print-directory list-dirs \
+              | scripts/build-matrix.sh resolve-dirs "$REQUESTED" \
+              | scripts/build-matrix.sh keys)
           else
             keys="$CHANGED"
           fi
-          matrix=$(echo "$keys" | jq -c --argjson map "$MAP" '
-            map($map[.] as $dir | {
-              key: .,
-              dir: $dir,
-              name: ($dir | split("/")[0]),
-              variant: ($dir | split("/")[1] // ""),
-            })')
+          matrix=$(printf '%s\n' "$keys" | scripts/build-matrix.sh matrix "$MAP")
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
-          echo "$matrix" | jq -r 'if length == 0 then "no image directories changed"
-                                  else "building: " + (map(.dir) | join(", ")) end' \
+          printf '%s\n' "$matrix" \
+            | jq -r 'if length == 0 then "no image directories changed"
+                     else "building: " + (map(.dir) | join(", ")) end' \
             >> "$GITHUB_STEP_SUMMARY"
 
   # ── 2. Build each image once per architecture, on a native runner ────────
@@ -225,6 +202,8 @@ jobs:
       matrix:
         image: ${{ fromJSON(needs.changes.outputs.matrix) }}
     steps:
+      - uses: actions/checkout@v6
+
       - uses: actions/download-artifact@v8
         with:
           path: /tmp/digests
@@ -241,27 +220,23 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create and push the multi-arch manifest
-        working-directory: /tmp/digests
         env:
           NAME: ${{ matrix.image.name }}
           VARIANT: ${{ matrix.image.variant }}
           SHA: ${{ github.sha }}
+          DIGESTS: /tmp/digests
           # Must match the number of entries in the build job's platform matrix.
           # Without this a half-failed build would publish a single-arch image
           # under a tag consumers read as multi-arch.
           EXPECTED_ARCHES: 2
         run: |
           set -euo pipefail
-          found=$(find . -type f | wc -l | tr -d ' ')
-          if [ "$found" -ne "$EXPECTED_ARCHES" ]; then
-            echo "::error::expected $EXPECTED_ARCHES per-arch digests for $NAME, found $found — refusing to publish a partial manifest"
-            exit 1
-          fi
+          scripts/build-matrix.sh check-digests "$EXPECTED_ARCHES" "$DIGESTS"
           repo="${REGISTRY}/${NAME}"
           prefix=${VARIANT:+${VARIANT}-}
           sha_tag="${repo}:${prefix}${SHA::7}"
           # Each artifact file is named for the digest its per-arch build pushed.
-          mapfile -t sources < <(find . -type f -printf "${repo}@sha256:%f\n")
+          mapfile -t sources < <(find "$DIGESTS" -type f -printf "${repo}@sha256:%f\n")
           docker buildx imagetools create \
             --tag "$sha_tag" \
             --tag "${repo}:${prefix}latest" \
