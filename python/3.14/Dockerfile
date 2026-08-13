@@ -90,7 +90,7 @@ RUN pip install --no-cache-dir --no-compile --prefer-binary \
     setuptools \
     wheel \
     && pipenv --version \
-    && find /usr/local -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null; true
+    && find /usr/local -type d -name __pycache__ -prune -exec rm -rf {} +
 
 # Set working directory
 WORKDIR /app
