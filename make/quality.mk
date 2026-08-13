@@ -6,7 +6,7 @@
 # repository's make and jq rather than a linter container's.
 #   macOS: brew install bats-core · Debian/Ubuntu: apt-get install bats
 
-.PHONY: lint lint-dockerfiles lint-workflows lint-shell test-unit
+.PHONY: lint lint-dockerfiles lint-workflows lint-shell test-unit test-integration
 
 HADOLINT_IMAGE   ?= ghcr.io/hadolint/hadolint:latest
 ACTIONLINT_IMAGE ?= rhysd/actionlint:latest
@@ -29,9 +29,20 @@ lint-shell:  ## shellcheck every script
 	@echo ">> shellcheck scripts/"
 	@docker run --rm -v "$(CURDIR):/mnt" --workdir /mnt $(SHELLCHECK_IMAGE) scripts/*.sh
 
-test-unit:  ## Run the bats unit tests for scripts/
+define _require_bats
 	@command -v bats >/dev/null 2>&1 || { \
 		echo "bats not found — brew install bats-core (macOS) or apt-get install bats (Debian)" >&2; \
 		exit 1; \
 	}
-	@bats tests/
+endef
+
+test-unit:  ## Run the bats unit tests for scripts/
+	$(call _require_bats)
+	@bats tests/*.bats
+
+# Stands up a local registry:2 and a buildx builder, then drives the real
+# push-by-digest → imagetools merge the publish path uses. Slower than
+# test-unit and needs docker, so it is a separate target.
+test-integration:  ## Run the integration tests (real docker + local registry)
+	$(call _require_bats)
+	@bats tests/integration/

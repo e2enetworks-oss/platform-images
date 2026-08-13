@@ -47,3 +47,20 @@ jobs:
 
       - name: Run unit tests
         run: make test-unit
+
+  # The manifest merge only runs on a push to main, so a pull request never
+  # exercises it. This job does: a local registry:2, a real buildx builder, and
+  # the same push-by-digest → imagetools create sequence the publish path uses.
+  integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Install bats
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq bats
+
+      - name: Run integration tests
+        run: make test-integration
