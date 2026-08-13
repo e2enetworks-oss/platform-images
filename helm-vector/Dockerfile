@@ -23,21 +23,28 @@ LABEL org.opencontainers.image.source="https://github.com/e2enetworks-oss/platfo
       org.opencontainers.image.licenses="MIT"
 
 ARG VECTOR_VERSION
+# sha256 of the vector release tarball per architecture.
+# Regenerate on a version bump: curl -fsSL <url> | sha256sum
+ARG VECTOR_SHA256_AMD64=b04fafcffcbeb3d43cbba587583dbe3338b24dd34256b3967fb15d137aff75f2
+ARG VECTOR_SHA256_ARM64=81cec5343e49985351e13f76ae3d550d7b0f0ac64fd4d88c07e3873bdfdf100a
 ARG TARGETARCH
 
-# curl | tar below — fail the build if curl fails (busybox ash needs it explicit)
+# busybox ash needs -e and pipefail spelled out, or the checksum comparison
+# below would fail silently inside its pipeline.
 SHELL ["/bin/ash", "-eo", "pipefail", "-c"]
 
 RUN apk add --no-cache bash grep curl openssl ca-certificates \
     && case "${TARGETARCH}" in \
-         amd64) VECTOR_ARCH="x86_64" ;; \
-         arm64) VECTOR_ARCH="aarch64" ;; \
+         amd64) VECTOR_ARCH="x86_64";  VECTOR_SHA256="${VECTOR_SHA256_AMD64}" ;; \
+         arm64) VECTOR_ARCH="aarch64"; VECTOR_SHA256="${VECTOR_SHA256_ARM64}" ;; \
          *) echo "Unsupported TARGETARCH: ${TARGETARCH}" >&2; exit 1 ;; \
        esac \
-    && curl -fsSL "https://github.com/vectordotdev/vector/releases/download/v${VECTOR_VERSION}/vector-${VECTOR_VERSION}-${VECTOR_ARCH}-unknown-linux-musl.tar.gz" \
-       | tar -xz -C /tmp \
+    && curl -fsSL -o /tmp/vector.tar.gz \
+       "https://github.com/vectordotdev/vector/releases/download/v${VECTOR_VERSION}/vector-${VECTOR_VERSION}-${VECTOR_ARCH}-unknown-linux-musl.tar.gz" \
+    && echo "${VECTOR_SHA256}  /tmp/vector.tar.gz" | sha256sum -c - \
+    && tar -xzf /tmp/vector.tar.gz -C /tmp \
     && mv "/tmp/vector-${VECTOR_ARCH}-unknown-linux-musl/bin/vector" /usr/local/bin/vector \
-    && rm -rf /tmp/vector-* \
+    && rm -rf /tmp/vector.tar.gz /tmp/vector-* \
     && helm version \
     && vector --version
 
