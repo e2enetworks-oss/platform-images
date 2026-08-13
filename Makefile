@@ -22,6 +22,7 @@ help:  ## Show all available Makefile targets
 	@echo ""
 	@echo "Info:"
 	@echo "  list                     Show images and the tags CI will publish"
+	@echo "  list-dirs                Print image directories, one per line (CI reads this)"
 	@echo ""
 	@echo "Images: $(IMAGES)"
 	@echo ""
