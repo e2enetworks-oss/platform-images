@@ -7,7 +7,7 @@
 # (dirs without a variant segment get bare latest/<sha7> tags)
 # =============================================================================
 
-.PHONY: build build-all push push-all test test-all list _docker_login
+.PHONY: build build-all push push-all test test-all list list-dirs _docker_login
 
 REGISTRY   ?= ghcr.io/e2enetworks-oss
 GIT_COMMIT := $(if $(GITHUB_SHA),$(shell echo $(GITHUB_SHA) | cut -c1-7),$(shell git rev-parse --short HEAD 2>/dev/null || echo "dev"))
@@ -73,6 +73,7 @@ test:  ## Smoke-test one image (runs it, checks key binaries)
 		helm-vector) cmd="helm version && vector --version" ;; \
 		pnpm/24)     cmd="node --version && pnpm --version && eslint --version" ;; \
 		bun/1)       cmd="bun --version && git --version" ;; \
+		*) echo "no smoke test defined for $(IMAGE) — add a case here" >&2; exit 1 ;; \
 	esac; \
 	img="$(IMAGE)"; name=$${img%%/*}; rest=$${img#*/}; [ "$$rest" = "$$img" ] && rest=""; \
 	if [ -n "$$rest" ]; then tag="$(REGISTRY)/$$name:$$rest-latest"; else tag="$(REGISTRY)/$$img:latest"; fi; \
@@ -84,6 +85,9 @@ test-all:  ## Smoke-test every image
 	@for img in $(IMAGES); do \
 		$(MAKE) --no-print-directory test IMAGE=$$img || exit 1; \
 	done
+
+list-dirs:  ## Print image directories, one per line
+	@printf '%s\n' $(IMAGES)
 
 list:  ## Show images and the tags CI will publish
 	@for img in $(IMAGES); do \

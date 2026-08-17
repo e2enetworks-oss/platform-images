@@ -1,13 +1,37 @@
 name: Build & Publish
 
 # Builds only the image directories that changed.
-# - Pull requests: build both architectures, push nothing (proof before merge).
-# - Push to main:  build + push <variant>-<sha7> and move <variant>-latest.
+# - Push to main:      build + push <variant>-<sha7> and move <variant>-latest.
+# - workflow_dispatch on main: rebuild + publish a chosen list, or all.
+# - Everything else (pull request, dispatch on any other branch): build both
+#   architectures and warm the cache, publish nothing. Publishing is gated on
+#   the ref rather than the event, because workflow_dispatch can name any ref
+#   and moving <variant>-latest from an unreviewed branch is not recoverable
+#   by reverting a commit.
+#
+# Two structural decisions carry the build time:
+#
+#   1. Each architecture builds on its own native runner — no QEMU emulation.
+#      The per-arch builds push by digest only; a merge job then joins those
+#      digests into one multi-arch manifest and applies the tags.
+#
+#   2. The layer cache lives in the registry, not in the Actions cache. Actions
+#      caches are ref-scoped — a run reads its own ref and the default branch
+#      and nothing else — so a pull request's cache is invisible to the merge
+#      build that follows it, and every merge paid for a full cold rebuild. A
+#      registry-backed cache has no such scoping: the pull request warms it and
+#      the merge build imports it.
 
 on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+    inputs:
+      images:
+        description: 'Image directories to rebuild, comma-separated (e.g. "rust,bun/1"), or "all"'
+        required: true
+        default: all
 
 permissions:
   contents: read
@@ -15,88 +39,219 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Never cancel on main: a cancelled run leaves the image it was publishing
+  # unbuilt and its cache tag unwritten — that is how the bootstrap commit lost
+  # its rust build. Pull request runs stay cancellable; a superseded push has
+  # nothing worth finishing.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+env:
+  REGISTRY: ghcr.io/e2enetworks-oss
 
 jobs:
-  # ── 1. Detect which image directories changed ────────────────────────────
-  # Filter keys encode the directory: segments joined with "_", dots as "_".
-  #   python/3.14 → python_3_14 · bun/1 → bun_1 · helm-vector → helm-vector
-  # Keep in sync with IMAGES in make/build.mk.
+  # ── 1. Decide which image directories to build ───────────────────────────
+  # The image set comes from `make list-dirs` (IMAGES in make/build.mk) — the
+  # single source of truth. Path filters and the filter-key → directory map are
+  # generated from it, so adding an image touches exactly one file.
   changes:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
-      images: ${{ steps.filter.outputs.changes }}
+      # JSON array of {key, dir, name, variant}; [] when nothing changed.
+      matrix: ${{ steps.matrix.outputs.matrix }}
+      # Publishing is gated on the ref, not just the event. workflow_dispatch
+      # can be launched against ANY branch, so an event-only gate would let a
+      # feature branch push tags and move <variant>-latest — the tag consumers
+      # treat as the current image. Everything off main builds without pushing.
+      publish: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
     steps:
       - uses: actions/checkout@v6
+
+      - name: Generate path filters from the image set
+        id: gen
+        run: |
+          set -euo pipefail
+          dirs=$(make --no-print-directory list-dirs)
+          {
+            echo "filters<<EOF"
+            printf '%s\n' "$dirs" | scripts/build-matrix.sh filters
+            echo "EOF"
+            echo "map=$(printf '%s\n' "$dirs" | scripts/build-matrix.sh map)"
+          } >> "$GITHUB_OUTPUT"
+
       - uses: dorny/paths-filter@v3
         id: filter
+        if: github.event_name != 'workflow_dispatch'
         with:
-          filters: |
-            python_3_11: python/3.11/**
-            python_3_14: python/3.14/**
-            rust: rust/**
-            helm-vector: helm-vector/**
-            pnpm_24: pnpm/24/**
-            bun_1: bun/1/**
+          filters: ${{ steps.gen.outputs.filters }}
 
-  # ── 2. Build (and on main, publish) each changed image ──────────────────
+      - name: Resolve build matrix
+        id: matrix
+        env:
+          EVENT: ${{ github.event_name }}
+          MAP: ${{ steps.gen.outputs.map }}
+          CHANGED: ${{ steps.filter.outputs.changes }}
+          REQUESTED: ${{ inputs.images }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            keys=$(make --no-print-directory list-dirs \
+              | scripts/build-matrix.sh resolve-dirs "$REQUESTED" \
+              | scripts/build-matrix.sh keys)
+          else
+            keys="$CHANGED"
+          fi
+          matrix=$(printf '%s\n' "$keys" | scripts/build-matrix.sh matrix "$MAP")
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+          printf '%s\n' "$matrix" \
+            | jq -r 'if length == 0 then "no image directories changed"
+                     else "building: " + (map(.dir) | join(", ")) end' \
+            >> "$GITHUB_STEP_SUMMARY"
+
+  # ── 2. Build each image once per architecture, on a native runner ────────
+  # When publishing, the layers are pushed by digest only — no tags; the merge
+  # job applies those. Otherwise the build still runs on both architectures and
+  # warms the cache, it just produces nothing.
   build:
     needs: changes
-    if: needs.changes.outputs.images != '[]'
+    if: needs.changes.outputs.matrix != '[]'
     strategy:
       fail-fast: false
       matrix:
-        key: ${{ fromJSON(needs.changes.outputs.images) }}
-    runs-on: ubuntu-latest
+        image: ${{ fromJSON(needs.changes.outputs.matrix) }}
+        platform:
+          - { arch: amd64, runner: ubuntu-latest }
+          - { arch: arm64, runner: ubuntu-24.04-arm }
+    runs-on: ${{ matrix.platform.runner }}
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v6
 
-      - name: Resolve image name, directory and tags
-        id: meta
-        env:
-          KEY: ${{ matrix.key }}
-          SHA: ${{ github.sha }}
-        run: |
-          dir=$(echo "$KEY" | sed 's/_/\//' | sed 's/_/./g')
-          name=${dir%%/*}
-          rest=${dir#*/}
-          [ "$rest" = "$dir" ] && rest=""
-          sha7=${SHA::7}
-          if [ -n "$rest" ]; then
-            tags="ghcr.io/e2enetworks-oss/${name}:${rest}-${sha7}
-          ghcr.io/e2enetworks-oss/${name}:${rest}-latest"
-          else
-            tags="ghcr.io/e2enetworks-oss/${name}:${sha7}
-          ghcr.io/e2enetworks-oss/${name}:latest"
-          fi
-          {
-            echo "dir=$dir"
-            echo "tags<<EOF"
-            echo "$tags"
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
-          echo "==> $dir"
-          echo "$tags"
+      - uses: docker/setup-buildx-action@v4
 
-      - uses: docker/setup-qemu-action@v3
-
-      - uses: docker/setup-buildx-action@v3
-
+      # A pull request from a fork gets a read-only token and cannot write the
+      # cache tag. It still reads it — the packages are public.
       - name: Log in to ghcr.io
-        if: github.event_name == 'push'
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build (and publish on main)
+      - name: Resolve build output and cache refs
+        id: out
+        env:
+          PUBLISH: ${{ needs.changes.outputs.publish }}
+          EVENT: ${{ github.event_name }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          NAME: ${{ matrix.image.name }}
+          VARIANT: ${{ matrix.image.variant }}
+          ARCH: ${{ matrix.platform.arch }}
+        run: |
+          set -euo pipefail
+          repo="${REGISTRY}/${NAME}"
+          # Variant directories tag as <variant>-<x>; bare directories as <x>.
+          prefix=${VARIANT:+${VARIANT}-}
+          cache_ref="${repo}:buildcache-${prefix}${ARCH}"
+
+          if [ "$PUBLISH" = "true" ]; then
+            echo "spec=type=image,name=${repo},push-by-digest=true,name-canonical=true,push=true" >> "$GITHUB_OUTPUT"
+          else
+            # Builds both architectures and warms the cache, publishes nothing.
+            echo "spec=type=cacheonly" >> "$GITHUB_OUTPUT"
+          fi
+
+          echo "cache_from=type=registry,ref=${cache_ref}" >> "$GITHUB_OUTPUT"
+          if [ "$EVENT" != "pull_request" ] || [ "$HEAD_REPO" = "$GITHUB_REPOSITORY" ]; then
+            echo "cache_to=type=registry,ref=${cache_ref},mode=max,image-manifest=true,oci-mediatypes=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "cache_to=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build ${{ matrix.image.dir }} for linux/${{ matrix.platform.arch }}
+        id: build
         uses: docker/build-push-action@v6
         with:
-          context: ${{ steps.meta.outputs.dir }}
-          file: ${{ steps.meta.outputs.dir }}/Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: ${{ github.event_name == 'push' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          cache-from: type=gha,scope=${{ matrix.key }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.key }}
+          context: ${{ matrix.image.dir }}
+          file: ${{ matrix.image.dir }}/Dockerfile
+          platforms: linux/${{ matrix.platform.arch }}
+          outputs: ${{ steps.out.outputs.spec }}
+          # Skip the SLSA attestation manifests: they surface as unknown/unknown
+          # entries in the registry and turn each per-arch push-by-digest result
+          # into an index the manifest merge would then have to unwrap.
+          provenance: false
+          cache-from: ${{ steps.out.outputs.cache_from }}
+          cache-to: ${{ steps.out.outputs.cache_to }}
+
+      - name: Export digest
+        if: needs.changes.outputs.publish == 'true'
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/digests
+          touch "/tmp/digests/${DIGEST#sha256:}"
+
+      - uses: actions/upload-artifact@v7
+        if: needs.changes.outputs.publish == 'true'
+        with:
+          name: digests-${{ matrix.image.key }}-${{ matrix.platform.arch }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  # ── 3. Join the per-arch digests into one tagged multi-arch manifest ─────
+  # One job per image, and the job runs even when a sibling image's build
+  # failed, so one broken Dockerfile cannot block the others from publishing.
+  merge:
+    needs: [changes, build]
+    if: ${{ !cancelled() && needs.changes.result == 'success' && needs.changes.outputs.publish == 'true' && needs.changes.outputs.matrix != '[]' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ${{ fromJSON(needs.changes.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/download-artifact@v8
+        with:
+          path: /tmp/digests
+          pattern: digests-${{ matrix.image.key }}-*
+          merge-multiple: true
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create and push the multi-arch manifest
+        env:
+          NAME: ${{ matrix.image.name }}
+          VARIANT: ${{ matrix.image.variant }}
+          SHA: ${{ github.sha }}
+          DIGESTS: /tmp/digests
+          # Must match the number of entries in the build job's platform matrix.
+          # Without this a half-failed build would publish a single-arch image
+          # under a tag consumers read as multi-arch.
+          EXPECTED_ARCHES: 2
+        run: |
+          set -euo pipefail
+          scripts/build-matrix.sh check-digests "$EXPECTED_ARCHES" "$DIGESTS"
+          repo="${REGISTRY}/${NAME}"
+          prefix=${VARIANT:+${VARIANT}-}
+          sha_tag="${repo}:${prefix}${SHA::7}"
+          # Each artifact file is named for the digest its per-arch build pushed.
+          mapfile -t sources < <(find "$DIGESTS" -type f -printf "${repo}@sha256:%f\n")
+          docker buildx imagetools create \
+            --tag "$sha_tag" \
+            --tag "${repo}:${prefix}latest" \
+            "${sources[@]}"
+          docker buildx imagetools inspect "$sha_tag"
+          echo "published \`$sha_tag\` and \`${repo}:${prefix}latest\`" >> "$GITHUB_STEP_SUMMARY"

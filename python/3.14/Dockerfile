@@ -57,7 +57,7 @@ RUN pip install --no-cache-dir --no-compile --prefer-binary \
     pytest-html==4.2.0 \
     pytest-sugar==1.1.1 \
     # Core Django (stable versions)
-    Django==5.2.7 \
+    Django==5.2.17 \
     djangorestframework==3.16.1 \
     django-environ==0.11.2 \
     mysqlclient==2.2.8 \
@@ -79,9 +79,9 @@ RUN pip install --no-cache-dir --no-compile --prefer-binary \
     ipdb==0.13.13 \
     # Core dependencies
     asgiref==3.11.1 \
-    cryptography==45.0.4 \
+    cryptography==45.0.7 \
     pycparser==2.22 \
-    PyJWT==2.11.0 \
+    PyJWT==2.13.0 \
     pymemcache==4.0.0 \
     sqlparse==0.5.5 \
     typing_extensions==4.15.0 \
@@ -90,7 +90,7 @@ RUN pip install --no-cache-dir --no-compile --prefer-binary \
     setuptools \
     wheel \
     && pipenv --version \
-    && find /usr/local -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null; true
+    && find /usr/local -type d -name __pycache__ -prune -exec rm -rf {} +
 
 # Set working directory
 WORKDIR /app
