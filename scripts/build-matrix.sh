@@ -17,6 +17,8 @@
 #   resolve-dirs <requested>    stdin: known dirs  → validated dirs, one per line
 #   check-digests <n> <dir>     —                  → exits non-zero unless dir holds n files
 #   version <file>              —                  → validated x.y.z version
+#   image-version <dir> [file]  —                  → required/optional image version
+#   build-arg <dir> [version]   —                  → image-specific Docker build argument
 #   tags <repo> <variant> <sha7> [version]          → immutable and moving tags
 #   build-output <publish> <event> <repo> <key> <arch> <sha7>
 
@@ -161,6 +163,42 @@ cmd_version() {
   printf '%s\n' "$version"
 }
 
+# Rust uses VERSION for both its base image and published tag. Other images may
+# omit the file and keep their directory-derived or hash-only tag scheme.
+cmd_image_version() {
+  local dir=${1:?image-version requires an image directory}
+  local file=${2:-${dir}/VERSION}
+
+  if [ -f "$file" ]; then
+    cmd_version "$file"
+    return
+  fi
+  if [ "$dir" = "rust" ]; then
+    echo "::error::Rust requires a VERSION file at '$file'" >&2
+    return 1
+  fi
+}
+
+# Keep image-specific build inputs beside version resolution so local Make and
+# GitHub Actions cannot choose different Rust base images.
+cmd_build_arg() {
+  local dir=${1:?build-arg requires an image directory}
+  local version=${2-}
+
+  if [ "$dir" != "rust" ]; then
+    return
+  fi
+  if [ -z "$version" ]; then
+    echo "::error::Rust requires a resolved build version" >&2
+    return 1
+  fi
+  if ! valid_version "$version"; then
+    echo "::error::version must use x.y.z format, got '$version'" >&2
+    return 1
+  fi
+  printf 'RUST_VERSION=%s\n' "$version"
+}
+
 # A VERSION file gives a bare image a readable immutable tag while preserving
 # its unqualified latest tag. Variant directories keep their existing tags.
 cmd_tags() {
@@ -242,6 +280,8 @@ main() {
     resolve-dirs)  cmd_resolve_dirs "$@" ;;
     check-digests) cmd_check_digests "$@" ;;
     version)       cmd_version "$@" ;;
+    image-version) cmd_image_version "$@" ;;
+    build-arg)     cmd_build_arg "$@" ;;
     tags)          cmd_tags "$@" ;;
     build-output)  cmd_build_output "$@" ;;
     -h|--help)     usage ;;

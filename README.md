@@ -25,8 +25,8 @@ Every merge to `main` that touches an image directory publishes two tags:
 | Directory variant | `python:3.14-a1b2c3d` | `python:3.14-latest` |
 | Bare | `helm-vector:a1b2c3d` | `helm-vector:latest` |
 
-Rust stores its compiler version in `rust/VERSION`. The immutable tag includes that version and the source commit.
-The unit tests require `rust/VERSION` to match `RUST_VERSION` in the Dockerfile.
+Rust stores its compiler version in `rust/VERSION`. The build passes this value
+to the Dockerfile and includes it in the immutable tag.
 
 **Consumers should pin the immutable tag.** Use `latest` only for local iteration.
 
@@ -41,7 +41,8 @@ The unit tests require `rust/VERSION` to match `RUST_VERSION` in the Dockerfile.
 3. Open a pull request (PR). CI builds both architectures and saves the layer cache. It does not publish an image.
 4. Merge the PR. CI reuses the cache, publishes the immutable tag, and moves the matching latest tag.
 
-When updating Rust, change `rust/VERSION` and `RUST_VERSION` in `rust/Dockerfile` together.
+When updating Rust, change `rust/VERSION`. The local and GitHub Actions builds
+use it as the Docker build argument and tag prefix.
 
 Each PR build pulls fresh base layers. Trivy scans both architectures for every changed image.
 It reports all Critical Common Vulnerabilities and Exposures (CVE) findings.

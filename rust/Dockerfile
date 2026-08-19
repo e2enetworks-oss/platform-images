@@ -18,11 +18,11 @@
 #   sccache                                — shared compilation cache
 #   protobuf-compiler                      — for gRPC/tonic builds
 #
-# Build with specific versions:
-#   docker buildx build --build-arg RUST_VERSION=1.97.1 ...
+# Build through Make so rust/VERSION supplies the compiler version:
+#   make build IMAGE=rust
 # =============================================================================
 
-ARG RUST_VERSION=1.97.1
+ARG RUST_VERSION
 
 # ---------------------------------------------------------------------------
 # Tool fetch stage — keeps cargo-binstall and its metadata out of the final image
