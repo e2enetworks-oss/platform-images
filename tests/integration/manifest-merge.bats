@@ -122,14 +122,19 @@ setup() {
   [ "$total" -eq 2 ]
 }
 
-# The workflow applies two tags in one imagetools call. Both must land on the
-# same index, or -latest and the sha tag would diverge.
-@test "should point both applied tags at the same manifest digest" {
+# The workflow applies both generated tags in one imagetools call. Both must
+# land on the same index, or latest and the immutable tag would diverge.
+@test "should point the versioned immutable and latest tags at the same manifest" {
+  tags=$("$SCRIPT" tags "$REPO" "" abc1234 1.97.1)
+  immutable=$(printf '%s\n' "$tags" | sed -n '1p')
+  moving=$(printf '%s\n' "$tags" | sed -n '2p')
   docker buildx imagetools create \
-    --tag "${REPO}:twotag-sha" --tag "${REPO}:twotag-latest" \
+    --tag "$immutable" --tag "$moving" \
     "${REPO}@${DIGEST_ARM64}" "${REPO}@${DIGEST_AMD64}" >/dev/null 2>&1
-  a=$(docker buildx imagetools inspect --raw "${REPO}:twotag-sha" | shasum -a 256 | cut -d' ' -f1)
-  b=$(docker buildx imagetools inspect --raw "${REPO}:twotag-latest" | shasum -a 256 | cut -d' ' -f1)
+  [ "$immutable" = "${REPO}:1.97.1-abc1234" ]
+  [ "$moving" = "${REPO}:latest" ]
+  a=$(docker buildx imagetools inspect --raw "$immutable" | shasum -a 256 | cut -d' ' -f1)
+  b=$(docker buildx imagetools inspect --raw "$moving" | shasum -a 256 | cut -d' ' -f1)
   [ "$a" = "$b" ]
 }
 

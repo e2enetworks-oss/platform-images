@@ -1,9 +1,8 @@
 # platform-images
 
-Golden CI base images for E2E Networks, built and published to GitHub Packages (ghcr.io).
-Every image is multi-arch (`linux/amd64` + `linux/arm64`) and built only when its directory changes.
-Each architecture is built on a native runner — `ubuntu-latest` for amd64, `ubuntu-24.04-arm`
-for arm64 — so no build runs under QEMU emulation.
+Continuous Integration (CI) base images for E2E Networks are published to GitHub Container Registry (GHCR).
+Every image supports `linux/amd64` and `linux/arm64`. A build runs only when its image directory changes.
+Each architecture uses a native runner. No build uses Quick Emulator (QEMU) emulation.
 
 ## Images
 
@@ -20,15 +19,16 @@ for arm64 — so no build runs under QEMU emulation.
 
 Every merge to `main` that touches an image directory publishes two tags:
 
-| Tag | Example | Mutability |
+| Image type | Immutable tag | Moving tag |
 |---|---|---|
-| `<variant>-<sha7>` | `python:3.14-a1b2c3d` | Immutable — pin this in consumers |
-| `<variant>-latest` | `python:3.14-latest` | Moves on every merge |
+| Version file | `rust:1.97.1-a1b2c3d` | `rust:latest` |
+| Directory variant | `python:3.14-a1b2c3d` | `python:3.14-latest` |
+| Bare | `helm-vector:a1b2c3d` | `helm-vector:latest` |
 
-Images without a variant segment (`rust`, `helm-vector`) get bare tags:
-`rust:a1b2c3d`, `rust:latest`.
+Rust stores its compiler version in `rust/VERSION`. The immutable tag includes that version and the source commit.
+The unit tests require `rust/VERSION` to match `RUST_VERSION` in the Dockerfile.
 
-**Consumers should pin the sha tag.** `-latest` is for convenience and local iteration.
+**Consumers should pin the immutable tag.** Use `latest` only for local iteration.
 
 ## Updating an image (daily workflow)
 
@@ -38,11 +38,15 @@ Images without a variant segment (`rust`, `helm-vector`) get bare tags:
    make build IMAGE=python/3.14
    make test  IMAGE=python/3.14
    ```
-3. Open a PR. CI builds the changed image on both architectures and publishes
-   nothing — but it does write the layer cache.
-4. Merge. CI imports that cache, so the merge build is a cache hit rather than a
-   second cold build, then pushes `ghcr.io/e2enetworks-oss/python:3.14-<sha7>`
-   and moves `3.14-latest`.
+3. Open a pull request (PR). CI builds both architectures and saves the layer cache. It does not publish an image.
+4. Merge the PR. CI reuses the cache, publishes the immutable tag, and moves the matching latest tag.
+
+When updating Rust, change `rust/VERSION` and `RUST_VERSION` in `rust/Dockerfile` together.
+
+Each PR build pulls fresh base layers. Trivy scans both architectures for every changed image.
+It reports all Critical Common Vulnerabilities and Exposures (CVE) findings.
+The PR fails when a Critical finding has an available fix.
+Findings without an upstream fix remain visible in the build log.
 
 Only directories that changed in the merge get rebuilt and pushed — everything
 else is untouched. A `-latest` tag therefore always points at the newest commit
@@ -77,11 +81,11 @@ gh workflow run build.yml -f images=rust,bun/1    # a subset
 ## Consuming an image
 
 ```dockerfile
-FROM ghcr.io/e2enetworks-oss/python:3.14-a1b2c3d
+FROM ghcr.io/e2enetworks-oss/rust:1.97.1-a1b2c3d
 ```
 
-The repo and packages are public — pulls need no auth. To push manually you
-need a GitHub PAT with `write:packages`, via `gh`:
+The repository and packages are public. Pulls need no authentication.
+Manual pushes need a GitHub Personal Access Token (PAT) with `write:packages`.
 
 ```sh
 gh auth login          # once, scopes: write:packages

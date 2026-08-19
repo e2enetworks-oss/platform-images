@@ -1,7 +1,7 @@
 name: Build & Publish
 
 # Builds only the image directories that changed.
-# - Push to main:      build + push <variant>-<sha7> and move <variant>-latest.
+# - Push to main:      build, push an immutable tag, and move the latest tag.
 # - workflow_dispatch on main: rebuild + publish a chosen list, or all.
 # - Everything else (pull request, dispatch on any other branch): build both
 #   architectures and warm the cache, publish nothing. Publishing is gated on
@@ -146,8 +146,10 @@ jobs:
           EVENT: ${{ github.event_name }}
           HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
           NAME: ${{ matrix.image.name }}
+          KEY: ${{ matrix.image.key }}
           VARIANT: ${{ matrix.image.variant }}
           ARCH: ${{ matrix.platform.arch }}
+          SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           repo="${REGISTRY}/${NAME}"
@@ -155,12 +157,9 @@ jobs:
           prefix=${VARIANT:+${VARIANT}-}
           cache_ref="${repo}:buildcache-${prefix}${ARCH}"
 
-          if [ "$PUBLISH" = "true" ]; then
-            echo "spec=type=image,name=${repo},push-by-digest=true,name-canonical=true,push=true" >> "$GITHUB_OUTPUT"
-          else
-            # Builds both architectures and warms the cache, publishes nothing.
-            echo "spec=type=cacheonly" >> "$GITHUB_OUTPUT"
-          fi
+          scripts/build-matrix.sh build-output \
+            "$PUBLISH" "$EVENT" "$repo" "$KEY" "$ARCH" "${SHA::7}" \
+            >> "$GITHUB_OUTPUT"
 
           echo "cache_from=type=registry,ref=${cache_ref}" >> "$GITHUB_OUTPUT"
           if [ "$EVENT" != "pull_request" ] || [ "$HEAD_REPO" = "$GITHUB_REPOSITORY" ]; then
@@ -177,12 +176,42 @@ jobs:
           file: ${{ matrix.image.dir }}/Dockerfile
           platforms: linux/${{ matrix.platform.arch }}
           outputs: ${{ steps.out.outputs.spec }}
+          pull: true
           # Skip the SLSA attestation manifests: they surface as unknown/unknown
           # entries in the registry and turn each per-arch push-by-digest result
           # into an index the manifest merge would then have to unwrap.
           provenance: false
           cache-from: ${{ steps.out.outputs.cache_from }}
           cache-to: ${{ steps.out.outputs.cache_to }}
+
+      - name: Report Critical vulnerabilities
+        if: github.event_name == 'pull_request'
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: v0.74.0
+          scan-type: image
+          image-ref: ${{ steps.out.outputs.image_ref }}
+          scanners: vuln
+          vuln-type: os,library
+          severity: CRITICAL
+          ignore-unfixed: false
+          exit-code: 0
+          format: table
+
+      - name: Block fixable Critical vulnerabilities
+        if: github.event_name == 'pull_request'
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: v0.74.0
+          skip-setup-trivy: true
+          scan-type: image
+          image-ref: ${{ steps.out.outputs.image_ref }}
+          scanners: vuln
+          vuln-type: os,library
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: 1
+          format: table
 
       - name: Export digest
         if: needs.changes.outputs.publish == 'true'
@@ -233,6 +262,7 @@ jobs:
 
       - name: Create and push the multi-arch manifest
         env:
+          DIR: ${{ matrix.image.dir }}
           NAME: ${{ matrix.image.name }}
           VARIANT: ${{ matrix.image.variant }}
           SHA: ${{ github.sha }}
@@ -245,13 +275,26 @@ jobs:
           set -euo pipefail
           scripts/build-matrix.sh check-digests "$EXPECTED_ARCHES" "$DIGESTS"
           repo="${REGISTRY}/${NAME}"
-          prefix=${VARIANT:+${VARIANT}-}
-          sha_tag="${repo}:${prefix}${SHA::7}"
+          version=""
+          if [ -f "${DIR}/VERSION" ]; then
+            version=$(scripts/build-matrix.sh version "${DIR}/VERSION")
+          fi
+          if ! tags_output=$(scripts/build-matrix.sh tags "$repo" "$VARIANT" "${SHA::7}" "$version"); then
+            exit 1
+          fi
+          mapfile -t tags <<< "$tags_output"
+          if [ "${#tags[@]}" -ne 2 ] || [ -z "${tags[0]}" ] || [ -z "${tags[1]}" ]; then
+            echo "::error::expected exactly two non-empty image tags" >&2
+            exit 1
+          fi
+          tag_args=()
+          for tag in "${tags[@]}"; do
+            tag_args+=(--tag "$tag")
+          done
           # Each artifact file is named for the digest its per-arch build pushed.
           mapfile -t sources < <(find "$DIGESTS" -type f -printf "${repo}@sha256:%f\n")
           docker buildx imagetools create \
-            --tag "$sha_tag" \
-            --tag "${repo}:${prefix}latest" \
+            "${tag_args[@]}" \
             "${sources[@]}"
-          docker buildx imagetools inspect "$sha_tag"
-          echo "published \`$sha_tag\` and \`${repo}:${prefix}latest\`" >> "$GITHUB_STEP_SUMMARY"
+          docker buildx imagetools inspect "${tags[0]}"
+          echo "published \`${tags[0]}\` and \`${tags[1]}\`" >> "$GITHUB_STEP_SUMMARY"
