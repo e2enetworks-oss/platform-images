@@ -16,6 +16,9 @@
 #   matrix <map-json>           stdin: keys JSON   → JSON array of matrix entries
 #   resolve-dirs <requested>    stdin: known dirs  → validated dirs, one per line
 #   check-digests <n> <dir>     —                  → exits non-zero unless dir holds n files
+#   version <file>              —                  → validated x.y.z version
+#   tags <repo> <variant> <sha7> [version]          → immutable and moving tags
+#   build-output <publish> <event> <repo> <key> <arch> <sha7>
 
 set -euo pipefail
 
@@ -128,6 +131,106 @@ cmd_check_digests() {
   printf '%s\n' "$found"
 }
 
+valid_version() {
+  [[ "$1" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+}
+
+# VERSION files are deliberately strict. Hidden carriage returns or extra
+# lines can create a different registry tag locally than in GitHub Actions.
+cmd_version() {
+  local file=${1:?version requires a file path}
+  local version
+
+  if [ ! -f "$file" ]; then
+    echo "::error::version file '$file' does not exist" >&2
+    return 1
+  fi
+  IFS= read -r version < "$file" || true
+  if [[ "$version" == *$'\r'* ]]; then
+    echo "::error::version file must contain one x.y.z line with a Unix newline" >&2
+    return 1
+  fi
+  if ! valid_version "$version"; then
+    echo "::error::version must use x.y.z format, got '$version'" >&2
+    return 1
+  fi
+  if ! cmp -s "$file" <(printf '%s\n' "$version"); then
+    echo "::error::version file must contain one x.y.z line with a Unix newline" >&2
+    return 1
+  fi
+  printf '%s\n' "$version"
+}
+
+# A VERSION file gives a bare image a readable immutable tag while preserving
+# its unqualified latest tag. Variant directories keep their existing tags.
+cmd_tags() {
+  local repo=${1:?tags requires the image repository}
+  local variant=${2-}
+  local sha=${3:?tags requires a seven-character commit hash}
+  local version=${4-}
+  local immutable_prefix moving_prefix
+
+  if [[ "$repo" =~ [[:space:]] ]]; then
+    echo "::error::image repository must not contain whitespace" >&2
+    return 1
+  fi
+  if [ "$sha" != "dev" ] && [[ ! "$sha" =~ ^[0-9a-f]{7}$ ]]; then
+    echo "::error::commit hash must be seven lowercase hexadecimal characters or 'dev'" >&2
+    return 1
+  fi
+  if [ -n "$version" ] && ! valid_version "$version"; then
+    echo "::error::version must use x.y.z format, got '$version'" >&2
+    return 1
+  fi
+  if [ -n "$version" ] && [ -n "$variant" ]; then
+    echo "::error::version and directory variant cannot both set the tag prefix" >&2
+    return 1
+  fi
+
+  immutable_prefix=${version:-$variant}
+  moving_prefix=$variant
+  printf '%s:%s%s\n' "$repo" "${immutable_prefix:+${immutable_prefix}-}" "$sha"
+  printf '%s:%slatest\n' "$repo" "${moving_prefix:+${moving_prefix}-}"
+}
+
+# Pull requests need a local image for Trivy. Published builds keep pushing by
+# digest so the merge job can join the native architecture results safely.
+cmd_build_output() {
+  local publish=${1:?build-output requires true or false}
+  local event=${2:?build-output requires an event name}
+  local repo=${3:?build-output requires the image repository}
+  local key=${4:?build-output requires the image key}
+  local arch=${5:?build-output requires the architecture}
+  local sha=${6:?build-output requires a seven-character commit hash}
+  local image_ref
+
+  if [ "$publish" != "true" ] && [ "$publish" != "false" ]; then
+    echo "::error::publish must be true or false" >&2
+    return 1
+  fi
+  if [[ "$repo" =~ [[:space:]] ]] || [[ ! "$key" =~ ^[a-zA-Z0-9_.-]+$ ]] \
+    || [[ ! "$arch" =~ ^[a-zA-Z0-9_.-]+$ ]]; then
+    echo "::error::repository, key, and architecture must be safe image identifiers" >&2
+    return 1
+  fi
+  if [[ ! "$sha" =~ ^[0-9a-f]{7}$ ]]; then
+    echo "::error::commit hash must be seven lowercase hexadecimal characters" >&2
+    return 1
+  fi
+
+  if [ "$publish" = "true" ]; then
+    printf 'spec=type=image,name=%s,push-by-digest=true,name-canonical=true,push=true\n' "$repo"
+    printf 'image_ref=\n'
+  elif [ "$event" = "pull_request" ]; then
+    image_ref="${repo}:scan-${key}-${arch}-${sha}"
+    printf 'spec=type=docker,name=%s\n' "$image_ref"
+    printf 'image_ref=%s\n' "$image_ref"
+  else
+    printf 'spec=type=cacheonly\n'
+    printf 'image_ref=\n'
+  fi
+}
+
 main() {
   local command=${1:-}
   [ $# -gt 0 ] && shift
@@ -138,6 +241,9 @@ main() {
     matrix)        cmd_matrix "$@" ;;
     resolve-dirs)  cmd_resolve_dirs "$@" ;;
     check-digests) cmd_check_digests "$@" ;;
+    version)       cmd_version "$@" ;;
+    tags)          cmd_tags "$@" ;;
+    build-output)  cmd_build_output "$@" ;;
     -h|--help)     usage ;;
     *)
       echo "unknown command: '${command}'" >&2
