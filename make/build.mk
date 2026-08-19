@@ -4,7 +4,7 @@
 # Image naming:
 #   dir python/3.14  → ghcr.io/e2enetworks-oss/python:3.14-<sha7>, python:3.14-latest
 #   dir rust         → ghcr.io/e2enetworks-oss/rust:<version>-<sha7>, rust:latest
-# A VERSION file adds the version prefix to a bare image's immutable tag.
+# Rust's VERSION file supplies its compiler build argument and tag prefix.
 # =============================================================================
 
 .PHONY: build build-all push push-all test test-all list list-dirs _docker_login
@@ -13,6 +13,7 @@ REGISTRY   ?= ghcr.io/e2enetworks-oss
 GIT_COMMIT := $(if $(GITHUB_SHA),$(shell printf '%.7s' "$(GITHUB_SHA)"),$(shell sha=$$(git rev-parse HEAD 2>/dev/null) && printf '%.7s' "$$sha" || printf 'dev'))
 PLATFORMS  ?= linux/amd64,linux/arm64
 DOCKER     ?= docker
+GH         ?= gh
 VERSION_FILE ?= $(IMAGE)/VERSION
 
 # Single source of truth for the image set. Keep in sync with the
@@ -25,13 +26,10 @@ IMAGES := python/3.11 python/3.14 rust helm-vector pnpm/24 bun/1
 _NAME    = $(firstword $(subst /, ,$(1)))
 _VARIANT = $(word 2,$(subst /, ,$(1)))
 
-# Resolve tags inside the recipe so a malformed VERSION file or helper failure
-# stops the build. Make's $(shell ...) discards the command exit status.
+# Resolve the version and tags inside the recipe so any helper failure stops the
+# build. Make's $(shell ...) discards the command exit status.
 define _resolve_tags
-	version=""; \
-	if [ -f "$(VERSION_FILE)" ]; then \
-		version=$$(scripts/build-matrix.sh version "$(VERSION_FILE)") || exit 1; \
-	fi; \
+	version=$$(scripts/build-matrix.sh image-version "$(IMAGE)" "$(VERSION_FILE)") || exit 1; \
 	tags=$$(scripts/build-matrix.sh tags \
 		"$(REGISTRY)/$(call _NAME,$(IMAGE))" \
 		"$(call _VARIANT,$(IMAGE))" \
@@ -54,6 +52,7 @@ build:  ## Build one image locally (current arch)
 	DOCKER_BUILDKIT=1 $(DOCKER) buildx build \
 		$(IMAGE) \
 		-f $(IMAGE)/Dockerfile \
+		$(if $(filter rust,$(IMAGE)),--build-arg "RUST_VERSION=$$version",) \
 		--tag "$$tag_one" \
 		--tag "$$tag_two" \
 		--load
@@ -64,7 +63,7 @@ build-all:  ## Build every image locally (current arch)
 	done
 
 _docker_login:
-	@gh auth token | docker login ghcr.io -u $$(gh api user --jq .login) --password-stdin
+	@$(GH) auth token | $(DOCKER) login ghcr.io -u $$($(GH) api user --jq .login) --password-stdin
 
 push: _docker_login  ## Build + push one image (multi-arch)
 	$(call _require_image)
@@ -72,6 +71,7 @@ push: _docker_login  ## Build + push one image (multi-arch)
 	DOCKER_BUILDKIT=1 $(DOCKER) buildx build \
 		$(IMAGE) \
 		-f $(IMAGE)/Dockerfile \
+		$(if $(filter rust,$(IMAGE)),--build-arg "RUST_VERSION=$$version",) \
 		--tag "$$tag_one" \
 		--tag "$$tag_two" \
 		--platform $(PLATFORMS) \
@@ -110,7 +110,6 @@ list-dirs:  ## Print image directories, one per line
 list:  ## Show images and the tags CI will publish
 	@for img in $(IMAGES); do \
 		name=$${img%%/*}; rest=$${img#*/}; [ "$$rest" = "$$img" ] && rest=""; \
-		version=""; \
-		[ ! -f "$$img/VERSION" ] || version=$$(scripts/build-matrix.sh version "$$img/VERSION") || exit 1; \
+		version=$$(scripts/build-matrix.sh image-version "$$img") || exit 1; \
 		scripts/build-matrix.sh tags "$(REGISTRY)/$$name" "$$rest" "$(GIT_COMMIT)" "$$version"; \
 	done

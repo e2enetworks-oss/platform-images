@@ -145,6 +145,7 @@ jobs:
           PUBLISH: ${{ needs.changes.outputs.publish }}
           EVENT: ${{ github.event_name }}
           HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          DIR: ${{ matrix.image.dir }}
           NAME: ${{ matrix.image.name }}
           KEY: ${{ matrix.image.key }}
           VARIANT: ${{ matrix.image.variant }}
@@ -156,17 +157,20 @@ jobs:
           # Variant directories tag as <variant>-<x>; bare directories as <x>.
           prefix=${VARIANT:+${VARIANT}-}
           cache_ref="${repo}:buildcache-${prefix}${ARCH}"
+          version=$(scripts/build-matrix.sh image-version "$DIR")
+          build_args=$(scripts/build-matrix.sh build-arg "$DIR" "$version")
 
-          scripts/build-matrix.sh build-output \
-            "$PUBLISH" "$EVENT" "$repo" "$KEY" "$ARCH" "${SHA::7}" \
-            >> "$GITHUB_OUTPUT"
-
-          echo "cache_from=type=registry,ref=${cache_ref}" >> "$GITHUB_OUTPUT"
-          if [ "$EVENT" != "pull_request" ] || [ "$HEAD_REPO" = "$GITHUB_REPOSITORY" ]; then
-            echo "cache_to=type=registry,ref=${cache_ref},mode=max,image-manifest=true,oci-mediatypes=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "cache_to=" >> "$GITHUB_OUTPUT"
-          fi
+          {
+            scripts/build-matrix.sh build-output \
+              "$PUBLISH" "$EVENT" "$repo" "$KEY" "$ARCH" "${SHA::7}"
+            echo "build_args=${build_args}"
+            echo "cache_from=type=registry,ref=${cache_ref}"
+            if [ "$EVENT" != "pull_request" ] || [ "$HEAD_REPO" = "$GITHUB_REPOSITORY" ]; then
+              echo "cache_to=type=registry,ref=${cache_ref},mode=max,image-manifest=true,oci-mediatypes=true"
+            else
+              echo "cache_to="
+            fi
+          } >> "$GITHUB_OUTPUT"
 
       - name: Build ${{ matrix.image.dir }} for linux/${{ matrix.platform.arch }}
         id: build
@@ -176,6 +180,7 @@ jobs:
           file: ${{ matrix.image.dir }}/Dockerfile
           platforms: linux/${{ matrix.platform.arch }}
           outputs: ${{ steps.out.outputs.spec }}
+          build-args: ${{ steps.out.outputs.build_args }}
           pull: true
           # Skip the SLSA attestation manifests: they surface as unknown/unknown
           # entries in the registry and turn each per-arch push-by-digest result
@@ -275,10 +280,7 @@ jobs:
           set -euo pipefail
           scripts/build-matrix.sh check-digests "$EXPECTED_ARCHES" "$DIGESTS"
           repo="${REGISTRY}/${NAME}"
-          version=""
-          if [ -f "${DIR}/VERSION" ]; then
-            version=$(scripts/build-matrix.sh version "${DIR}/VERSION")
-          fi
+          version=$(scripts/build-matrix.sh image-version "$DIR")
           if ! tags_output=$(scripts/build-matrix.sh tags "$repo" "$VARIANT" "${SHA::7}" "$version"); then
             exit 1
           fi

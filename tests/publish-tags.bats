@@ -83,10 +83,52 @@ setup() {
   [ "${lines[1]}" = "ghcr.io/e2enetworks-oss/rust:latest" ]
 }
 
-@test "should keep the Rust version file aligned with the Dockerfile" {
-  version=$("$SCRIPT" version "$REPO_ROOT/rust/VERSION")
-  run grep -Fx "ARG RUST_VERSION=$version" "$REPO_ROOT/rust/Dockerfile"
+@test "should require the Rust version file" {
+  run "$SCRIPT" image-version rust "$BATS_TEST_TMPDIR/missing-version"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"Rust requires a VERSION file"* ]]
+}
+
+@test "should allow an unversioned bare image without a version file" {
+  run "$SCRIPT" image-version helm-vector "$BATS_TEST_TMPDIR/missing-version"
   [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "should require the Rust build version as an external build argument" {
+  run grep -Fx "ARG RUST_VERSION" "$REPO_ROOT/rust/Dockerfile"
+  [ "$status" -eq 0 ]
+}
+
+@test "should use the Rust build version in each base image" {
+  run grep -Fc 'FROM mirror.gcr.io/library/rust:${RUST_VERSION}-slim-trixie' \
+    "$REPO_ROOT/rust/Dockerfile"
+  [ "$status" -eq 0 ]
+  [ "$output" = "2" ]
+}
+
+@test "should resolve the Rust Docker build argument" {
+  run "$SCRIPT" build-arg rust 1.98.0
+  [ "$status" -eq 0 ]
+  [ "$output" = "RUST_VERSION=1.98.0" ]
+}
+
+@test "should require a resolved Rust Docker build version" {
+  run "$SCRIPT" build-arg rust ""
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"Rust requires a resolved build version"* ]]
+}
+
+@test "should reject a malformed Rust Docker build version" {
+  run "$SCRIPT" build-arg rust 1.98
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"version must use x.y.z format"* ]]
+}
+
+@test "should omit Docker build arguments for other images" {
+  run "$SCRIPT" build-arg helm-vector ""
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
 }
 
 @test "should list a versioned immutable Rust tag and unqualified latest tag" {
@@ -105,6 +147,50 @@ setup() {
     IMAGE=rust DOCKER=true VERSION_FILE="$BATS_TEST_TMPDIR/VERSION"
   [ "$status" -ne 0 ]
   [[ "$output" == *"version must use x.y.z format"* ]]
+}
+
+@test "should stop a Make build when the Rust version file is missing" {
+  run make -C "$REPO_ROOT" --no-print-directory build \
+    IMAGE=rust DOCKER=true VERSION_FILE="$BATS_TEST_TMPDIR/missing-version"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"Rust requires a VERSION file"* ]]
+}
+
+@test "should pass the Rust version file value to Docker" {
+  printf '1.98.0\n' > "$BATS_TEST_TMPDIR/VERSION"
+  run make -C "$REPO_ROOT" --no-print-directory build \
+    IMAGE=rust DOCKER=echo VERSION_FILE="$BATS_TEST_TMPDIR/VERSION"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"--build-arg RUST_VERSION=1.98.0"* ]]
+  [[ "$output" == *"rust:1.98.0-"* ]]
+}
+
+@test "should pass the Rust version file value to a multi-architecture push" {
+  printf '1.98.0\n' > "$BATS_TEST_TMPDIR/VERSION"
+  run make -C "$REPO_ROOT" --no-print-directory push \
+    IMAGE=rust DOCKER=echo GH=true PLATFORMS=linux/amd64 \
+    VERSION_FILE="$BATS_TEST_TMPDIR/VERSION"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"--build-arg RUST_VERSION=1.98.0"* ]]
+  [[ "$output" == *"rust:1.98.0-"* ]]
+  [[ "$output" == *"--platform linux/amd64"* ]]
+  [[ "$output" == *"--push"* ]]
+}
+
+@test "should pass the resolved Rust version into GitHub Actions builds" {
+  block=$(sed -n '/name: Resolve build output and cache refs/,/name: Report Critical vulnerabilities/p' "$WORKFLOW")
+  [[ "$block" == *'DIR: ${{ matrix.image.dir }}'* ]]
+  [[ "$block" == *'version=$(scripts/build-matrix.sh image-version "$DIR")'* ]]
+  [[ "$block" == *'build_args=$(scripts/build-matrix.sh build-arg "$DIR" "$version")'* ]]
+  [[ "$block" == *'echo "build_args=${build_args}"'* ]]
+  [[ "$block" == *'build-args: ${{ steps.out.outputs.build_args }}'* ]]
+}
+
+@test "should require the image version before publishing manifest tags" {
+  block=$(sed -n '/name: Create and push the multi-arch manifest/,$p' "$WORKFLOW")
+  [[ "$block" == *'DIR: ${{ matrix.image.dir }}'* ]]
+  [[ "$block" == *'version=$(scripts/build-matrix.sh image-version "$DIR")'* ]]
+  [[ "$block" != *'if [ -f "${DIR}/VERSION" ]'* ]]
 }
 
 @test "should use a local Docker image output for pull request scans" {
