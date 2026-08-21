@@ -29,7 +29,7 @@ on:
   workflow_dispatch:
     inputs:
       images:
-        description: 'Image directories to rebuild, comma-separated (e.g. "rust,bun/1"), or "all"'
+        description: 'Image directories to rebuild, comma-separated (e.g. "rust,bun/1.4"), or "all"'
         required: true
         default: all
 

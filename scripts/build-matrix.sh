@@ -87,7 +87,7 @@ cmd_resolve_dirs() {
   local -a wanted=()
   # printf with the trailing newline, not '%s': `read` returns non-zero on a
   # final line with no delimiter, which silently drops the last entry — so
-  # "rust,bun/1" would resolve to "rust" alone.
+  # "rust,bun/1.4" would resolve to "rust" alone.
   while read -r dir; do
     [ -n "$dir" ] || continue
     if ! printf '%s\n' "$known" | grep -qxF "$dir"; then

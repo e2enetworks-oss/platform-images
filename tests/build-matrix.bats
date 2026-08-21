@@ -105,15 +105,15 @@ setup() {
 }
 
 @test "should return only the requested subset when given a comma-separated list" {
-  run bash -c "printf '%s\n' \"\$IMAGES\" | '$SCRIPT' resolve-dirs 'rust,bun/1'"
+  run bash -c "printf '%s\n' \"\$IMAGES\" | '$SCRIPT' resolve-dirs 'rust,bun/1.4'"
   [ "$status" -eq 0 ]
   [ "${lines[0]}" = "rust" ]
-  [ "${lines[1]}" = "bun/1" ]
+  [ "${lines[1]}" = "bun/1.4" ]
   [ "${#lines[@]}" -eq 2 ]
 }
 
 @test "should tolerate whitespace around comma-separated entries" {
-  run bash -c "printf '%s\n' \"\$IMAGES\" | '$SCRIPT' resolve-dirs ' rust , bun/1 '"
+  run bash -c "printf '%s\n' \"\$IMAGES\" | '$SCRIPT' resolve-dirs ' rust , bun/1.4 '"
   [ "$status" -eq 0 ]
   [ "${#lines[@]}" -eq 2 ]
 }
@@ -212,9 +212,9 @@ setup() {
 # Catches: a trailing newline in `make list-dirs` becoming a phantom empty
 # image directory in the matrix.
 @test "should ignore blank lines and trailing newlines in the image list" {
-  run bash -c "printf 'rust\n\n\nbun/1\n\n' | '$SCRIPT' keys"
+  run bash -c "printf 'rust\n\n\nbun/1.4\n\n' | '$SCRIPT' keys"
   [ "$status" -eq 0 ]
-  [ "$output" = '["rust","bun_1"]' ]
+  [ "$output" = '["rust","bun_1_4"]' ]
 }
 
 @test "should handle a single directory" {
@@ -269,7 +269,7 @@ setup() {
   [ "$status" -eq 0 ]
   [ "${#lines[@]}" -eq 6 ]
   [[ "$output" == *"python/3.11"* ]]
-  [[ "$output" == *"bun/1"* ]]
+  [[ "$output" == *"bun/1.4"* ]]
 }
 
 # Catches the bug the new default arm fixes: an image added to IMAGES with no

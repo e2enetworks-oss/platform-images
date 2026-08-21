@@ -13,7 +13,7 @@ Each architecture uses a native runner. No build uses Quick Emulator (QEMU) emul
 | `rust` | `ghcr.io/e2enetworks-oss/rust:*` | cargo-chef, grcov, sccache, cargo-audit, protobuf |
 | `helm-vector` | `ghcr.io/e2enetworks-oss/helm-vector:*` | helm, vector, bash, curl, openssl (alpine) |
 | `pnpm/24` | `ghcr.io/e2enetworks-oss/pnpm:24-*` | Node 24 + pnpm 11, eslint, prettier, vitest |
-| `bun/1` | `ghcr.io/e2enetworks-oss/bun:1-*` | Bun 1.x, git, ssh, curl |
+| `bun/1.4` | `ghcr.io/e2enetworks-oss/bun:1.4-*` | Bun 1.4, git, ssh, curl |
 
 ## Tag scheme
 
@@ -70,13 +70,13 @@ merge paid for a full cold rebuild. A registry cache has no such scoping.
 ### Forcing a rebuild
 
 Patch versions float where upstream supports it (`python:3.14-slim`,
-`oven/bun:1-slim`), so **rebuilding an unchanged image picks up the latest
+`oven/bun:1.4-slim`), so **rebuilding an unchanged image picks up the latest
 patch release**. Rebuild without a code change from the Actions tab
 (**Build & Publish** → *Run workflow*), or from the command line:
 
 ```sh
 gh workflow run build.yml -f images=all           # every image
-gh workflow run build.yml -f images=rust,bun/1    # a subset
+gh workflow run build.yml -f images=rust,bun/1.4  # a subset
 ```
 
 ## Consuming an image
@@ -90,7 +90,7 @@ Manual pushes need a GitHub Personal Access Token (PAT) with `write:packages`.
 
 ```sh
 gh auth login          # once, scopes: write:packages
-make push IMAGE=bun/1  # logs into ghcr.io for you
+make push IMAGE=bun/1.4  # logs into ghcr.io for you
 ```
 
 ## Adding a new image
