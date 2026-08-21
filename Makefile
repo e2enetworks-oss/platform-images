@@ -29,4 +29,4 @@ help:  ## Show all available Makefile targets
 	@echo ""
 	@echo "Examples:"
 	@echo "  make build IMAGE=python/3.14"
-	@echo "  make push IMAGE=bun/1"
+	@echo "  make push IMAGE=bun/1.4"
