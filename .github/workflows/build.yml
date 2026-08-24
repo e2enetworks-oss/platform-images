@@ -108,12 +108,29 @@ jobs:
                      else "building: " + (map(.dir) | join(", ")) end' \
             >> "$GITHUB_STEP_SUMMARY"
 
-  # ── 2. Build each image once per architecture, on a native runner ────────
+  # ── 2. Reject secrets before building or publishing ──────────────────────
+  gitleaks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Scan repository for secrets
+        run: |
+          docker run --rm \
+            -v "$PWD:/repo:ro" \
+            -w /repo \
+            zricethezav/gitleaks:v8.24.2@sha256:b5918eb91b8d2473cec722f066abb4352e4ffdc4ec9f4283ec143aba9ec9ebc4 \
+            dir . --redact --exit-code 1 --no-banner
+
+  # ── 3. Build each image once per architecture, on a native runner ────────
   # When publishing, the layers are pushed by digest only — no tags; the merge
   # job applies those. Otherwise the build still runs on both architectures and
   # warms the cache, it just produces nothing.
   build:
-    needs: changes
+    needs: [changes, gitleaks]
     if: needs.changes.outputs.matrix != '[]'
     strategy:
       fail-fast: false
@@ -235,12 +252,12 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  # ── 3. Join the per-arch digests into one tagged multi-arch manifest ─────
+  # ── 4. Join the per-arch digests into one tagged multi-arch manifest ─────
   # One job per image, and the job runs even when a sibling image's build
   # failed, so one broken Dockerfile cannot block the others from publishing.
   merge:
-    needs: [changes, build]
-    if: ${{ !cancelled() && needs.changes.result == 'success' && needs.changes.outputs.publish == 'true' && needs.changes.outputs.matrix != '[]' }}
+    needs: [changes, gitleaks, build]
+    if: ${{ !cancelled() && needs.changes.result == 'success' && needs.gitleaks.result == 'success' && needs.changes.outputs.publish == 'true' && needs.changes.outputs.matrix != '[]' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:

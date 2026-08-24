@@ -9,9 +9,9 @@ setup() {
 
 # Catches: Rust publishing a hash-only tag that hides its compiler version.
 @test "should prefix a bare image immutable tag with its version" {
-  run "$SCRIPT" tags ghcr.io/e2enetworks-oss/rust "" e6f4b3d 1.97.1
+  run "$SCRIPT" tags ghcr.io/e2enetworks-oss/rust "" e6f4b3d 1.98.0
   [ "$status" -eq 0 ]
-  [ "${lines[0]}" = "ghcr.io/e2enetworks-oss/rust:1.97.1-e6f4b3d" ]
+  [ "${lines[0]}" = "ghcr.io/e2enetworks-oss/rust:1.98.0-e6f4b3d" ]
   [ "${lines[1]}" = "ghcr.io/e2enetworks-oss/rust:latest" ]
   [ "${#lines[@]}" -eq 2 ]
 }
@@ -31,55 +31,55 @@ setup() {
 }
 
 @test "should reject a malformed image version" {
-  run "$SCRIPT" tags ghcr.io/e2enetworks-oss/rust "" e6f4b3d 1.97
+  run "$SCRIPT" tags ghcr.io/e2enetworks-oss/rust "" e6f4b3d 1.98
   [ "$status" -ne 0 ]
   [[ "$output" == *"version must use x.y.z format"* ]]
 }
 
 @test "should read one strict version line" {
-  printf '1.97.1\n' > "$BATS_TEST_TMPDIR/VERSION"
+  printf '1.98.0\n' > "$BATS_TEST_TMPDIR/VERSION"
   run "$SCRIPT" version "$BATS_TEST_TMPDIR/VERSION"
   [ "$status" -eq 0 ]
-  [ "$output" = "1.97.1" ]
+  [ "$output" = "1.98.0" ]
 }
 
 @test "should reject a version file with carriage returns" {
-  printf '1.97.1\r\n' > "$BATS_TEST_TMPDIR/VERSION"
+  printf '1.98.0\r\n' > "$BATS_TEST_TMPDIR/VERSION"
   run "$SCRIPT" version "$BATS_TEST_TMPDIR/VERSION"
   [ "$status" -ne 0 ]
   [[ "$output" == *"one x.y.z line with a Unix newline"* ]]
 }
 
 @test "should reject a version file with extra lines" {
-  printf '1.97.1\n2.0.0\n' > "$BATS_TEST_TMPDIR/VERSION"
+  printf '1.98.0\n2.0.0\n' > "$BATS_TEST_TMPDIR/VERSION"
   run "$SCRIPT" version "$BATS_TEST_TMPDIR/VERSION"
   [ "$status" -ne 0 ]
   [[ "$output" == *"one x.y.z line with a Unix newline"* ]]
 }
 
 @test "should reject a malformed version file" {
-  printf '1.97\n' > "$BATS_TEST_TMPDIR/VERSION"
+  printf '1.98\n' > "$BATS_TEST_TMPDIR/VERSION"
   run "$SCRIPT" version "$BATS_TEST_TMPDIR/VERSION"
   [ "$status" -ne 0 ]
   [[ "$output" == *"version must use x.y.z format"* ]]
 }
 
 @test "should reject a version combined with a directory variant" {
-  run "$SCRIPT" tags ghcr.io/e2enetworks-oss/rust 1.97 e6f4b3d 1.97.1
+  run "$SCRIPT" tags ghcr.io/e2enetworks-oss/rust 1.98 e6f4b3d 1.98.0
   [ "$status" -ne 0 ]
   [[ "$output" == *"cannot both set the tag prefix"* ]]
 }
 
 @test "should reject a commit hash with the wrong shape" {
-  run "$SCRIPT" tags ghcr.io/e2enetworks-oss/rust "" not-a-sha 1.97.1
+  run "$SCRIPT" tags ghcr.io/e2enetworks-oss/rust "" not-a-sha 1.98.0
   [ "$status" -ne 0 ]
   [[ "$output" == *"seven lowercase hexadecimal characters"* ]]
 }
 
 @test "should allow the local development tag outside a Git checkout" {
-  run "$SCRIPT" tags ghcr.io/e2enetworks-oss/rust "" dev 1.97.1
+  run "$SCRIPT" tags ghcr.io/e2enetworks-oss/rust "" dev 1.98.0
   [ "$status" -eq 0 ]
-  [ "${lines[0]}" = "ghcr.io/e2enetworks-oss/rust:1.97.1-dev" ]
+  [ "${lines[0]}" = "ghcr.io/e2enetworks-oss/rust:1.98.0-dev" ]
   [ "${lines[1]}" = "ghcr.io/e2enetworks-oss/rust:latest" ]
 }
 
@@ -142,7 +142,7 @@ setup() {
 }
 
 @test "should stop a Make build when the version file is invalid" {
-  printf '1.97\n' > "$BATS_TEST_TMPDIR/VERSION"
+  printf '1.98\n' > "$BATS_TEST_TMPDIR/VERSION"
   run make -C "$REPO_ROOT" --no-print-directory build \
     IMAGE=rust DOCKER=true VERSION_FILE="$BATS_TEST_TMPDIR/VERSION"
   [ "$status" -ne 0 ]
@@ -236,4 +236,16 @@ setup() {
   [[ "$block" == *"if: github.event_name == 'pull_request'"* ]]
   [[ "$block" == *"ignore-unfixed: true"* ]]
   [[ "$block" == *"exit-code: 1"* ]]
+}
+
+@test "should scan the repository for secrets with redacted Gitleaks output" {
+  block=$(sed -n '/^  gitleaks:/,/^  build:/p' "$WORKFLOW")
+  [[ "$block" == *"zricethezav/gitleaks:v8.24.2@sha256:b5918eb91b8d2473cec722f066abb4352e4ffdc4ec9f4283ec143aba9ec9ebc4"* ]]
+  [[ "$block" == *"dir . --redact --exit-code 1 --no-banner"* ]]
+}
+
+@test "should require Gitleaks before building or publishing images" {
+  [[ $(grep -c '^    needs: \[changes, gitleaks\]$' "$WORKFLOW") -eq 1 ]]
+  [[ $(grep -c '^    needs: \[changes, gitleaks, build\]$' "$WORKFLOW") -eq 1 ]]
+  [[ $(grep -c "needs.gitleaks.result == 'success'" "$WORKFLOW") -eq 1 ]]
 }
