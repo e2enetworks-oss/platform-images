@@ -21,7 +21,7 @@ Every merge to `main` that touches an image directory publishes two tags:
 
 | Image type | Immutable tag | Moving tag |
 |---|---|---|
-| Version file | `rust:1.97.1-a1b2c3d` | `rust:latest` |
+| Version file | `rust:1.98.0-a1b2c3d` | `rust:latest` |
 | Directory variant | `python:3.14-a1b2c3d` | `python:3.14-latest` |
 | Bare | `helm-vector:a1b2c3d` | `helm-vector:latest` |
 
@@ -44,10 +44,11 @@ to the Dockerfile and includes it in the immutable tag.
 When updating Rust, change `rust/VERSION`. The local and GitHub Actions builds
 use it as the Docker build argument and tag prefix.
 
-Each PR build pulls fresh base layers. Trivy scans both architectures for every changed image.
-It reports all Critical Common Vulnerabilities and Exposures (CVE) findings.
-The PR fails when a Critical finding has an available fix.
-Findings without an upstream fix remain visible in the build log.
+Gitleaks scans the repository before any image build or publication. Each PR
+build then pulls fresh base layers, and Trivy scans both architectures for every
+changed image. Trivy reports all Critical Common Vulnerabilities and Exposures
+(CVE) findings. The PR fails when a Critical finding has an available fix;
+findings without an upstream fix remain visible in the build log.
 
 Only directories that changed in the merge get rebuilt and pushed — everything
 else is untouched. A `-latest` tag therefore always points at the newest commit
@@ -82,7 +83,7 @@ gh workflow run build.yml -f images=rust,bun/1.4  # a subset
 ## Consuming an image
 
 ```dockerfile
-FROM ghcr.io/e2enetworks-oss/rust:1.97.1-a1b2c3d
+FROM ghcr.io/e2enetworks-oss/rust:1.98.0-a1b2c3d
 ```
 
 The repository and packages are public. Pulls need no authentication.
