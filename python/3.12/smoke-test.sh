@@ -38,7 +38,7 @@ uv pip install \
     --python "$smoke_venv/bin/python" \
     --only-binary=:all: \
     "setuptools<81" \
-    Django==4.2.26 \
+    Django==4.2.30 \
     django-simple-history==3.3.0 \
     pycparser==2.21 \
     numpy==1.26.4 \
