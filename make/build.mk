@@ -90,7 +90,7 @@ test:  ## Smoke-test one image (runs it, checks key binaries)
 		rust)        cmd="rustc --version && cargo --version && cargo-audit --version" ;; \
 		helm-vector) cmd="helm version && vector --version" ;; \
 		pnpm/24)     cmd="node --version && pnpm --version && eslint --version" ;; \
-		bun/1.4)     cmd="bun --version && git --version" ;; \
+		bun/1.4)     cmd="bun --version && git --version && make --version" ;; \
 		*) echo "no smoke test defined for $(IMAGE) — add a case here" >&2; exit 1 ;; \
 	esac; \
 	img="$(IMAGE)"; name=$${img%%/*}; rest=$${img#*/}; [ "$$rest" = "$$img" ] && rest=""; \

@@ -100,6 +100,16 @@ setup() {
   [ "$status" -eq 0 ]
 }
 
+@test "should include make in the Bun image and its smoke test" {
+  run grep -Eq '^[[:space:]]+make[[:space:]]+\\$' "$REPO_ROOT/bun/1.4/Dockerfile"
+  [ "$status" -eq 0 ]
+  run grep -Fx '    make --version' "$REPO_ROOT/bun/1.4/Dockerfile"
+  [ "$status" -eq 0 ]
+  run grep -F 'bun/1.4)     cmd="bun --version && git --version && make --version" ;;' \
+    "$REPO_ROOT/make/build.mk"
+  [ "$status" -eq 0 ]
+}
+
 @test "should use the Rust build version in each base image" {
   run grep -Fc 'FROM mirror.gcr.io/library/rust:${RUST_VERSION}-slim-trixie' \
     "$REPO_ROOT/rust/Dockerfile"
@@ -209,11 +219,19 @@ setup() {
   [ "${lines[1]}" = "image_ref=" ]
 }
 
-@test "should keep cache-only output for manual branch builds" {
+@test "should use a local Docker image output for non-publishing manual builds" {
   run "$SCRIPT" build-output false workflow_dispatch \
     ghcr.io/e2enetworks-oss/rust rust amd64 e6f4b3d
   [ "$status" -eq 0 ]
-  [ "${lines[0]}" = "spec=type=cacheonly" ]
+  [ "${lines[0]}" = "spec=type=docker,name=ghcr.io/e2enetworks-oss/rust:scan-rust-amd64-e6f4b3d" ]
+  [ "${lines[1]}" = "image_ref=ghcr.io/e2enetworks-oss/rust:scan-rust-amd64-e6f4b3d" ]
+}
+
+@test "should keep digest output for published manual main builds" {
+  run "$SCRIPT" build-output true workflow_dispatch \
+    ghcr.io/e2enetworks-oss/rust rust amd64 e6f4b3d
+  [ "$status" -eq 0 ]
+  [ "${lines[0]}" = "spec=type=image,name=ghcr.io/e2enetworks-oss/rust,push-by-digest=true,name-canonical=true,push=true" ]
   [ "${lines[1]}" = "image_ref=" ]
 }
 
@@ -231,11 +249,23 @@ setup() {
   [[ "$block" == *"exit-code: 0"* ]]
 }
 
-@test "should fail pull requests only for fixable Critical findings" {
+@test "should run Trivy for every image build and fail only for fixable Critical findings" {
+  run grep -F "if: github.event_name == 'pull_request'" "$WORKFLOW"
+  [ "$status" -ne 0 ]
   block=$(sed -n '/name: Block fixable Critical vulnerabilities/,/name: Export digest/p' "$WORKFLOW")
-  [[ "$block" == *"if: github.event_name == 'pull_request'"* ]]
   [[ "$block" == *"ignore-unfixed: true"* ]]
   [[ "$block" == *"exit-code: 1"* ]]
+}
+
+@test "should resolve a local image or pushed digest for Trivy" {
+  run grep -F 'LOCAL_REF: ${{ steps.out.outputs.image_ref }}' "$WORKFLOW"
+  [ "$status" -eq 0 ]
+  run grep -F 'DIGEST: ${{ steps.build.outputs.digest }}' "$WORKFLOW"
+  [ "$status" -eq 0 ]
+  run grep -F 'image_ref=${REPO}@${DIGEST}' "$WORKFLOW"
+  [ "$status" -eq 0 ]
+  run grep -F 'no image reference or digest available for Trivy' "$WORKFLOW"
+  [ "$status" -eq 0 ]
 }
 
 @test "should scan the repository for secrets with redacted Gitleaks output" {
