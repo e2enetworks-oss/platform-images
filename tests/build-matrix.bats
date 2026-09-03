@@ -267,8 +267,9 @@ setup() {
 @test "should print every image directory one per line from make list-dirs" {
   run make -C "$REPO_ROOT" --no-print-directory list-dirs
   [ "$status" -eq 0 ]
-  [ "${#lines[@]}" -eq 6 ]
+  [ "${#lines[@]}" -eq 7 ]
   [[ "$output" == *"python/3.11"* ]]
+  [[ "$output" == *"python/3.12"* ]]
   [[ "$output" == *"bun/1.4"* ]]
 }
 

@@ -8,6 +8,7 @@ Every image supports `linux/amd64` and `linux/arm64`.
 | Directory | Image | Includes |
 |---|---|---|
 | `python/3.11` | `ghcr.io/e2enetworks-oss/python:3.11-*` | Python, uv, pipenv, Ansible, Ruff, Pyright, Semgrep, pytest |
+| `python/3.12` | `ghcr.io/e2enetworks-oss/python:3.12-*` | Python 3.12, Python CI tools, and native build headers including libffi |
 | `python/3.14` | `ghcr.io/e2enetworks-oss/python:3.14-*` | Python 3.14 and the Python CI tools |
 | `rust` | `ghcr.io/e2enetworks-oss/rust:*` | Rust, cargo-chef, grcov, sccache, cargo-audit, protobuf |
 | `helm-vector` | `ghcr.io/e2enetworks-oss/helm-vector:*` | Helm, Vector, Bash, curl, OpenSSL |

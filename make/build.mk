@@ -18,7 +18,7 @@ VERSION_FILE ?= $(IMAGE)/VERSION
 
 # Single source of truth for the image set. Keep in sync with the
 # path filters in .github/workflows/build.yml.
-IMAGES := python/3.11 python/3.14 rust helm-vector pnpm/24 bun/1.4
+IMAGES := python/3.11 python/3.12 python/3.14 rust helm-vector pnpm/24 bun/1.4
 
 # Tag resolution for $(IMAGE):
 #   _NAME    = first path segment          (python/3.14 → python)
@@ -86,6 +86,7 @@ test:  ## Smoke-test one image (runs it, checks key binaries)
 	$(call _require_image)
 	@case "$(IMAGE)" in \
 		python/3.11) cmd="python --version && uv --version && ruff --version && pytest --version" ;; \
+		python/3.12) cmd="python --version && uv --version && ruff --version && pytest --version && pkg-config --exists libffi" ;; \
 		python/3.14) cmd="python --version && uv --version && ruff --version && pytest --version" ;; \
 		rust)        cmd="rustc --version && cargo --version && cargo-audit --version" ;; \
 		helm-vector) cmd="helm version && vector --version" ;; \
