@@ -1,22 +1,22 @@
 # =============================================================================
-# PYTHON CI/CD BASE IMAGE — Python 3.14
+# PYTHON CI/CD BASE IMAGE — Python 3.12
 # =============================================================================
 # Pre-baked CI image for Python services. Patch version floats on rebuild
-# (3.14-slim always resolves to the latest 3.14.x).
-# Differs from 3.11 only by libxml2/libxslt/libxmlsec headers.
+# (3.12-slim always resolves to the latest 3.12.x).
+# Includes libffi and libxml2/libxslt/libxmlsec development headers.
 #
 # Components:
-#   python 3.14 (slim)         — from official python image
+#   python 3.12 (slim)         — from official python image
 #   uv, uvx                    — pinned, from official astral-sh image
 #   pipenv, ansible            — env + deploy tooling
 #   ruff, pyright, semgrep     — lint / typecheck / SAST
 #   pytest + django stack      — test + framework batteries
 # =============================================================================
 
-FROM mirror.gcr.io/library/python:3.14-slim
+FROM mirror.gcr.io/library/python:3.12-slim
 
 LABEL org.opencontainers.image.source="https://github.com/e2enetworks-oss/platform-images" \
-      org.opencontainers.image.description="Python 3.14 CI base image (uv, pipenv, ansible, ruff, pytest, Django stack, libxmlsec)" \
+      org.opencontainers.image.description="Python 3.12 CI base image (uv, pipenv, ansible, ruff, pytest, Django stack, libffi, libxmlsec)" \
       org.opencontainers.image.licenses="MIT"
 
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
@@ -27,12 +27,13 @@ ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
 COPY --from=ghcr.io/astral-sh/uv:0.12.3 /uv /usr/local/bin/uv
 COPY --from=ghcr.io/astral-sh/uv:0.12.3 /uvx /usr/local/bin/uvx
 
-# Install system dependencies (including MySQL, FreeType and XML headers)
+# Install system dependencies (including MySQL, FreeType, FFI and XML headers)
 RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends \
     git \
     openssh-client \
     build-essential \
     pkg-config \
+    libffi-dev \
     default-libmysqlclient-dev \
     libfreetype6-dev \
     libxml2-dev \
@@ -91,6 +92,12 @@ RUN pip install --no-cache-dir --no-compile --prefer-binary \
     wheel \
     && pipenv --version \
     && find /usr/local -type d -name __pycache__ -prune -exec rm -rf {} +
+
+# Verify the e2e-gpu CFFI pin builds from source against the bundled headers
+RUN python -m venv /tmp/cffi-check \
+    && /tmp/cffi-check/bin/python -m pip install --no-cache-dir --no-binary=cffi cffi==1.15.1 \
+    && /tmp/cffi-check/bin/python -c "import cffi; assert cffi.__version__ == '1.15.1'" \
+    && rm -rf /tmp/cffi-check
 
 # Set working directory
 WORKDIR /app
