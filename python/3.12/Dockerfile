@@ -8,6 +8,7 @@
 # Components:
 #   python 3.12 (slim)         — from official python image
 #   uv, uvx                    — pinned, from official astral-sh image
+#   /opt/wheels                — e2e-gpu Python 3.12 compatibility wheels
 #   pipenv, ansible            — env + deploy tooling
 #   ruff, pyright, semgrep     — lint / typecheck / SAST
 #   pytest + django stack      — test + framework batteries
@@ -32,6 +33,7 @@ RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends \
     git \
     openssh-client \
     build-essential \
+    patch \
     pkg-config \
     libffi-dev \
     default-libmysqlclient-dev \
@@ -41,6 +43,44 @@ RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends \
     libxmlsec1-dev \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+# Build reusable wheels for e2e-gpu's legacy Python 3.12 pins. This runs once
+# per target architecture, so /opt/wheels contains native amd64 or arm64 wheels
+# instead of asking every CI job to compile the packages again.
+COPY wheelhouse-requirements.txt /tmp/wheelhouse-requirements.txt
+COPY django-safedelete-django42.patch /tmp/django-safedelete-django42.patch
+RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
+    export PIP_NO_CACHE_DIR=0 PIP_DEFAULT_TIMEOUT=120 PIP_RETRIES=10 \
+    && python -m pip install --no-compile "setuptools<81" wheel \
+    && mkdir -p /opt/wheels \
+    && while IFS= read -r requirement; do \
+        if [ "$requirement" = "django-safedelete==0.3.2" ]; then \
+            mkdir -p /tmp/safedelete-source \
+            && python -m pip download \
+                    --no-deps \
+                    --no-binary=:all: \
+                    --dest=/tmp/safedelete-source \
+                    "$requirement" \
+            && tar -xzf /tmp/safedelete-source/django-safedelete-0.3.2.tar.gz \
+                -C /tmp/safedelete-source \
+            && patch -d /tmp/safedelete-source/django-safedelete-0.3.2 \
+                -p1 < /tmp/django-safedelete-django42.patch \
+            && python -m pip wheel \
+                --no-deps \
+                --wheel-dir=/opt/wheels \
+                /tmp/safedelete-source/django-safedelete-0.3.2; \
+        else \
+            python -m pip wheel \
+                --no-deps \
+                --wheel-dir=/opt/wheels \
+                "$requirement"; \
+        fi; \
+    done < /tmp/wheelhouse-requirements.txt \
+    && cp /tmp/wheelhouse-requirements.txt /opt/wheels/requirements.txt \
+    && rm -rf \
+        /tmp/django-safedelete-django42.patch \
+        /tmp/safedelete-source \
+        /tmp/wheelhouse-requirements.txt
 
 # Install all Python packages in a single layer
 RUN pip install --no-cache-dir --no-compile --prefer-binary \
@@ -88,16 +128,16 @@ RUN pip install --no-cache-dir --no-compile --prefer-binary \
     typing_extensions==4.15.0 \
     whitenoise==6.11.0 \
     # Common utilities
-    setuptools \
+    "setuptools<81" \
     wheel \
     && pipenv --version \
+    && python -c "import pkg_resources" \
     && find /usr/local -type d -name __pycache__ -prune -exec rm -rf {} +
 
-# Verify the e2e-gpu CFFI pin builds from source against the bundled headers
-RUN python -m venv /tmp/cffi-check \
-    && /tmp/cffi-check/bin/python -m pip install --no-cache-dir --no-binary=cffi cffi==1.15.1 \
-    && /tmp/cffi-check/bin/python -c "import cffi; assert cffi.__version__ == '1.15.1'" \
-    && rm -rf /tmp/cffi-check
+# The same smoke test is run during both native architecture builds. Keeping it
+# in the final image also lets consumers verify a pulled manifest explicitly.
+COPY --chmod=0755 smoke-test.sh /usr/local/bin/python312-smoke-test
+RUN python312-smoke-test
 
 # Set working directory
 WORKDIR /app
