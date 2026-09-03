@@ -13,7 +13,7 @@ Each architecture uses a native runner. No build uses Quick Emulator (QEMU) emul
 | `rust` | `ghcr.io/e2enetworks-oss/rust:*` | cargo-chef, grcov, sccache, cargo-audit, protobuf |
 | `helm-vector` | `ghcr.io/e2enetworks-oss/helm-vector:*` | helm, vector, bash, curl, openssl (alpine) |
 | `pnpm/24` | `ghcr.io/e2enetworks-oss/pnpm:24-*` | Node 24 + pnpm 11, eslint, prettier, vitest |
-| `bun/1.4` | `ghcr.io/e2enetworks-oss/bun:1.4-*` | Bun 1.4, git, ssh, curl, make |
+| `bun/1.4` | `ghcr.io/e2enetworks-oss/bun:1.4-*` | Bun 1.4, git, ssh, curl |
 
 ## Tag scheme
 
@@ -44,12 +44,11 @@ to the Dockerfile and includes it in the immutable tag.
 When updating Rust, change `rust/VERSION`. The local and GitHub Actions builds
 use it as the Docker build argument and tag prefix.
 
-Gitleaks scans the repository before any image build or publication. Every
-workflow image build pulls fresh base layers, and Trivy scans both architectures
-for every image selected by the build matrix. Trivy reports all Critical Common
-Vulnerabilities and Exposures (CVE) findings. The workflow fails when a Critical
-finding has an available fix; findings without an upstream fix remain visible in
-the build log.
+Gitleaks scans the repository before any image build or publication. Each PR
+build then pulls fresh base layers, and Trivy scans both architectures for every
+changed image. Trivy reports all Critical Common Vulnerabilities and Exposures
+(CVE) findings. The PR fails when a Critical finding has an available fix;
+findings without an upstream fix remain visible in the build log.
 
 Only directories that changed in the merge get rebuilt and pushed — everything
 else is untouched. A `-latest` tag therefore always points at the newest commit

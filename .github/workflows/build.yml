@@ -206,29 +206,13 @@ jobs:
           cache-from: ${{ steps.out.outputs.cache_from }}
           cache-to: ${{ steps.out.outputs.cache_to }}
 
-      - name: Resolve Trivy image reference
-        id: scan
-        env:
-          LOCAL_REF: ${{ steps.out.outputs.image_ref }}
-          REPO: ${{ env.REGISTRY }}/${{ matrix.image.name }}
-          DIGEST: ${{ steps.build.outputs.digest }}
-        run: |
-          set -euo pipefail
-          if [ -n "$LOCAL_REF" ]; then
-            echo "image_ref=$LOCAL_REF" >> "$GITHUB_OUTPUT"
-          elif [ -n "$DIGEST" ]; then
-            echo "image_ref=${REPO}@${DIGEST}" >> "$GITHUB_OUTPUT"
-          else
-            echo "::error::no image reference or digest available for Trivy" >&2
-            exit 1
-          fi
-
       - name: Report Critical vulnerabilities
+        if: github.event_name == 'pull_request'
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           version: v0.74.0
           scan-type: image
-          image-ref: ${{ steps.scan.outputs.image_ref }}
+          image-ref: ${{ steps.out.outputs.image_ref }}
           scanners: vuln
           vuln-type: os,library
           severity: CRITICAL
@@ -237,12 +221,13 @@ jobs:
           format: table
 
       - name: Block fixable Critical vulnerabilities
+        if: github.event_name == 'pull_request'
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           version: v0.74.0
           skip-setup-trivy: true
           scan-type: image
-          image-ref: ${{ steps.scan.outputs.image_ref }}
+          image-ref: ${{ steps.out.outputs.image_ref }}
           scanners: vuln
           vuln-type: os,library
           severity: CRITICAL
