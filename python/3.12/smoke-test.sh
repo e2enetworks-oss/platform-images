@@ -12,6 +12,10 @@ esac
 
 python -c 'import pkg_resources'
 
+# The smoke environment is disposable. Do not retain its downloaded packages
+# in the published image (or expose test-only package metadata to scanners).
+export UV_NO_CACHE=1
+
 smoke_venv=$(mktemp -d)
 trap 'rm -rf "$smoke_venv"' EXIT HUP INT TERM
 
@@ -34,7 +38,7 @@ uv pip install \
     --python "$smoke_venv/bin/python" \
     --only-binary=:all: \
     "setuptools<81" \
-    Django==4.2.11 \
+    Django==4.2.26 \
     django-simple-history==3.3.0 \
     pycparser==2.21 \
     numpy==1.26.4 \
