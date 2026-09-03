@@ -8,7 +8,7 @@ Every image supports `linux/amd64` and `linux/arm64`.
 | Directory | Image | Includes |
 |---|---|---|
 | `python/3.11` | `ghcr.io/e2enetworks-oss/python:3.11-*` | Python, uv, pipenv, Ansible, Ruff, Pyright, Semgrep, pytest |
-| `python/3.12` | `ghcr.io/e2enetworks-oss/python:3.12-*` | Python 3.12, Python CI tools, and native build headers including libffi |
+| `python/3.12` | `ghcr.io/e2enetworks-oss/python:3.12-*` | Python 3.12, Python CI tools, native build headers, and an e2e-gpu compatibility wheelhouse |
 | `python/3.14` | `ghcr.io/e2enetworks-oss/python:3.14-*` | Python 3.14 and the Python CI tools |
 | `rust` | `ghcr.io/e2enetworks-oss/rust:*` | Rust, cargo-chef, grcov, sccache, cargo-audit, protobuf |
 | `helm-vector` | `ghcr.io/e2enetworks-oss/helm-vector:*` | Helm, Vector, Bash, curl, OpenSSL |
@@ -67,6 +67,25 @@ FROM ghcr.io/e2enetworks-oss/rust:1.98.0-a1b2c3d
 ```
 
 The images are public. Manual pushes need a GitHub token with `write:packages`.
+
+### Python 3.12 e2e-gpu wheelhouse
+
+The Python 3.12 image contains architecture-native compatibility wheels in
+`/opt/wheels` for e2e-gpu pins that otherwise compile during dependency
+installation. Use the wheelhouse as an extra package source while retaining the
+normal package index for all other dependencies:
+
+```sh
+uv pip install --find-links=/opt/wheels -r requirements.txt
+```
+
+The wheelhouse is built and smoke-tested independently on `linux/amd64` and
+`linux/arm64`. Its exact direct pins are recorded in
+`/opt/wheels/requirements.txt` inside the image.
+
+The `django-safedelete==0.3.2` wheel carries a narrow Django 4.2 import patch.
+It intentionally preserves the package's Boolean `deleted` field and legacy
+`safedelete_mixin_factory` API used by e2e-gpu.
 
 ## Add an image
 

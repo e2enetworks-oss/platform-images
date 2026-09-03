@@ -86,7 +86,7 @@ test:  ## Smoke-test one image (runs it, checks key binaries)
 	$(call _require_image)
 	@case "$(IMAGE)" in \
 		python/3.11) cmd="python --version && uv --version && ruff --version && pytest --version" ;; \
-		python/3.12) cmd="python --version && uv --version && ruff --version && pytest --version && pkg-config --exists libffi" ;; \
+		python/3.12) cmd="python312-smoke-test && uv --version && ruff --version && pytest --version && coverage --version && pkg-config --exists libffi && pkg-config --exists freetype2 && pkg-config --exists mysqlclient" ;; \
 		python/3.14) cmd="python --version && uv --version && ruff --version && pytest --version" ;; \
 		rust)        cmd="rustc --version && cargo --version && cargo-audit --version" ;; \
 		helm-vector) cmd="helm version && vector --version" ;; \
