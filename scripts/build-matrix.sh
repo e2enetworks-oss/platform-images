@@ -231,8 +231,9 @@ cmd_tags() {
   printf '%s:%slatest\n' "$repo" "${moving_prefix:+${moving_prefix}-}"
 }
 
-# Pull requests need a local image for Trivy. Published builds keep pushing by
-# digest so the merge job can join the native architecture results safely.
+# Pull requests and non-publishing manual builds need a local image for Trivy.
+# Published builds keep pushing by digest so the merge job can join the native
+# architecture results safely; the workflow scans that pushed digest directly.
 cmd_build_output() {
   local publish=${1:?build-output requires true or false}
   local event=${2:?build-output requires an event name}
@@ -259,7 +260,7 @@ cmd_build_output() {
   if [ "$publish" = "true" ]; then
     printf 'spec=type=image,name=%s,push-by-digest=true,name-canonical=true,push=true\n' "$repo"
     printf 'image_ref=\n'
-  elif [ "$event" = "pull_request" ]; then
+  elif [ "$event" = "pull_request" ] || [ "$event" = "workflow_dispatch" ]; then
     image_ref="${repo}:scan-${key}-${arch}-${sha}"
     printf 'spec=type=docker,name=%s\n' "$image_ref"
     printf 'image_ref=%s\n' "$image_ref"

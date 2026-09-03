@@ -11,12 +11,13 @@
 #   bun 1.4                    — from official oven/bun image
 #   git, openssh-client        — CI clone operations
 #   curl, ca-certificates      — fetching + TLS
+#   make                       — build orchestration used by CI projects
 # =============================================================================
 
 FROM mirror.gcr.io/oven/bun:1.4-slim
 
 LABEL org.opencontainers.image.source="https://github.com/e2enetworks-oss/platform-images" \
-      org.opencontainers.image.description="Bun 1.4 CI base image (git, ssh, curl)" \
+      org.opencontainers.image.description="Bun 1.4 CI base image (git, ssh, curl, make)" \
       org.opencontainers.image.licenses="MIT"
 
 USER root
@@ -27,6 +28,7 @@ RUN apt-get update -y && \
     git \
     openssh-client \
     curl \
+    make \
     ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 
@@ -40,4 +42,5 @@ USER bun
 # Verify all components
 RUN bun --version && \
     git --version && \
-    curl --version
+    curl --version && \
+    make --version
