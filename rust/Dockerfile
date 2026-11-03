@@ -89,8 +89,12 @@ LABEL org.opencontainers.image.source="https://github.com/e2enetworks-oss/platfo
       org.opencontainers.image.description="Rust CI base image (cargo-chef, grcov, sccache, cargo-audit, protobuf)" \
       org.opencontainers.image.licenses="MIT"
 
-# Install system dependencies needed by common Rust projects
-RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends \
+# Install system dependencies needed by common Rust projects. The upgrade
+# takes Debian's security fixes for packages the upstream base already ships
+# (CVE-2026-99083 in linux-libc-dev blocked the 1.99.1 build): the Trivy gate
+# refuses any fixable CRITICAL, and the base image lags trixie-security.
+RUN apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y -qq \
+    && apt-get install -y -qq --no-install-recommends \
     git \
     curl \
     pkg-config \

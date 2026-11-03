@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Platforms](https://img.shields.io/badge/platforms-linux%2Famd64%20%C2%B7%20linux%2Farm64-lightgrey.svg)](#consume-an-image)
 
-[![rust](https://img.shields.io/badge/rust-1.98.1-orange.svg)](#consume-an-image)
+[![rust](https://img.shields.io/badge/rust-1.99.1-orange.svg)](#consume-an-image)
 [![bun](https://img.shields.io/badge/bun-1.4.2-black.svg)](#consume-an-image)
 [![python](https://img.shields.io/badge/python-3.11%20%C2%B7%203.12%20%C2%B7%203.14-blue.svg)](#consume-an-image)
 [![node](https://img.shields.io/badge/node-24-green.svg)](#consume-an-image)
@@ -17,7 +17,7 @@ Every image supports `linux/amd64` and `linux/arm64`.
 **Use the immutable `<sha7>` tag in production (`image:` in CI, `FROM` in a Dockerfile); use the moving `latest` tag for local development only.**
 
 ```dockerfile
-FROM ghcr.io/e2enetworks-oss/rust:1.98.1-a1b2c3d
+FROM ghcr.io/e2enetworks-oss/rust:1.99.1-a1b2c3d
 ```
 
 | Image | Immutable tag — use this | Moving tag — local dev only | Includes |
@@ -25,7 +25,7 @@ FROM ghcr.io/e2enetworks-oss/rust:1.98.1-a1b2c3d
 | `ghcr.io/e2enetworks-oss/python` | `python:3.11-<sha7>` | `python:3.11-latest` | Python, uv, pipenv, Ansible, Ruff, Pyright, Semgrep, pytest |
 | `ghcr.io/e2enetworks-oss/python` | `python:3.12-<sha7>` | `python:3.12-latest` | Python 3.12, Python CI tools, native build headers, and an e2e-gpu compatibility wheelhouse |
 | `ghcr.io/e2enetworks-oss/python` | `python:3.14-<sha7>` | `python:3.14-latest` | Python 3.14 and the Python CI tools |
-| `ghcr.io/e2enetworks-oss/rust` | `rust:1.98.1-<sha7>` | `rust:latest` | Rust, cargo-chef, grcov, sccache, cargo-audit, protobuf |
+| `ghcr.io/e2enetworks-oss/rust` | `rust:1.99.1-<sha7>` | `rust:latest` | Rust, cargo-chef, grcov, sccache, cargo-audit, protobuf |
 | `ghcr.io/e2enetworks-oss/helm-vector` | `helm-vector:<sha7>` | `helm-vector:latest` | Helm, Vector, Bash, curl, OpenSSL |
 | `ghcr.io/e2enetworks-oss/pnpm` | `pnpm:24-<sha7>` | `pnpm:24-latest` | Node 24, pnpm 11, ESLint, Prettier, Vitest |
 | `ghcr.io/e2enetworks-oss/bun` | `bun:1.4-<sha7>` | `bun:1.4-latest` | Bun 1.4, Git, SSH, curl, Make |
